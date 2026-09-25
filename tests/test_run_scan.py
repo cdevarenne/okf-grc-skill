@@ -13,6 +13,7 @@ from run_scan import (
     normalize_semgrep,
     normalize_trivy,
     run_tool,
+    scan,
 )
 
 OUTPUT = Path(__file__).parent / "fixtures" / "scanner_output"
@@ -90,3 +91,20 @@ def test_run_tool_rejects_crash(tmp_path: Path) -> None:
     argv = [sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(2)"]
     with pytest.raises(ScanError, match="exit 2: boom"):
         run_tool("fake", argv, tmp_path)
+
+
+def test_checkov_summary_without_results_yields_no_findings() -> None:
+    bare = {"passed": 0, "failed": 0, "skipped": 0, "parsing_errors": 0, "resource_count": 0}
+    assert normalize_checkov([bare, _load("checkov.json")[0]], "app") == normalize_checkov(_load("checkov.json")[0], "app")
+
+
+def test_semgrep_errors_fail_the_scan() -> None:
+    doc = {**_load("semgrep.json"), "errors": [{"message": "rule parse failure"}, {"message": "later"}]}
+    with pytest.raises(ScanError, match="semgrep: .*rule parse failure"):
+        normalize_semgrep(doc, "app")
+
+
+@pytest.mark.parametrize("target", ["-rf", "../outside", "/etc", "app/../../x"])
+def test_scan_rejects_targets_outside_the_repo(tmp_path: Path, target: str) -> None:
+    with pytest.raises(ScanError, match="--target"):
+        scan(tmp_path, target)

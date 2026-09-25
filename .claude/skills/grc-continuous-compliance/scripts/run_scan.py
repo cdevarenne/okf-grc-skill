@@ -25,7 +25,12 @@ def _finding(tool: str, rule_id: str, severity: str, target: str, message: str) 
 
 
 def normalize_semgrep(doc: dict[str, Any], target_dir: str) -> list[Finding]:
-    """Semgrep --json; paths are already repo-relative. Rule ids drop the config-path prefix."""
+    """Semgrep --json; paths are already repo-relative. Rule ids drop the config-path prefix.
+
+    Semgrep reports rule and parse errors in `errors` while still exiting 0/1, so any error fails the scan.
+    """
+    if errors := doc.get("errors"):
+        raise ScanError(f"semgrep: {len(errors)} error(s), first: {errors[0].get('message', errors[0])}")
     return [
         _finding(
             "semgrep",
@@ -53,7 +58,10 @@ def normalize_trivy(doc: dict[str, Any], target_dir: str) -> list[Finding]:
 
 
 def normalize_checkov(doc: dict[str, Any] | list[dict[str, Any]], target_dir: str) -> list[Finding]:
-    """Checkov -o json (one object per framework); run with cwd=target so paths are target-relative."""
+    """Checkov -o json (one object per framework); run with cwd=target so paths are target-relative.
+
+    A framework with nothing to scan is a bare summary dict without `results`; it contributes no findings.
+    """
     reports = doc if isinstance(doc, list) else [doc]
     return [
         _finding(
@@ -64,7 +72,7 @@ def normalize_checkov(doc: dict[str, Any] | list[dict[str, Any]], target_dir: st
             f"{c['check_name']} ({c['resource']})",
         )
         for report in reports
-        for c in report["results"]["failed_checks"]
+        for c in report.get("results", {}).get("failed_checks", [])
     ]
 
 
@@ -101,8 +109,15 @@ def run_tool(tool: str, argv: list[str], cwd: Path) -> Any:
         raise ScanError(f"{tool}: unreadable JSON output: {e}") from e
 
 
+def _check_target(repo: Path, target_dir: str) -> None:
+    """Refuse option-like targets and targets that resolve outside the repo root."""
+    if target_dir.startswith("-") or not (repo / target_dir).resolve().is_relative_to(repo.resolve()):
+        raise ScanError(f"--target {target_dir!r} must be a directory inside the repo root {repo}")
+
+
 def scan(repo: Path, target_dir: str) -> list[Finding]:
     """Run all four scanners over `repo/target_dir` and return deduplicated findings."""
+    _check_target(repo, target_dir)
     target = repo / target_dir
     conftest_inputs = sorted(
         p.relative_to(repo).as_posix()
