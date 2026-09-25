@@ -1,0 +1,45 @@
+---
+name: grc-continuous-compliance
+description: >
+  Runs a layered DevSecOps scan (Semgrep, Trivy, Checkov, Conftest) against a
+  target app, maps each finding to a SOC 2 / NIST 800-53 control using the local
+  OKF knowledge bundle, emits OSCAL, and writes an auditor-facing report. Use
+  when the user asks to review security or compliance posture, produce an audit
+  evidence pass, or check a deploy against policy, in a repo that ships a
+  knowledge/ OKF bundle.
+---
+
+# GRC Continuous-Compliance Skill
+
+## Grounding rule (non-negotiable)
+
+1. Read `knowledge/index.md`, then the concepts under `controls/`, `policies/`,
+   and `scanners/`, before doing anything else.
+2. A finding maps to a control only through a `rule_ids` declaration in the
+   bundle. The scripts enforce this; do not override them.
+3. A finding with no mapped control is a **coverage gap**. Report it as one.
+   Never invent a control, a mapping, or a status.
+
+## Workflow
+
+1. **Check tools.** If `.tools/bin/` is missing, run `make bootstrap`.
+2. **Scan and map.** Run `make scan`. It writes:
+   - `out/findings.json`: normalized findings `{tool, rule_id, severity, target, message, tags}`
+   - `out/mapping.json`: per-control status plus unmapped findings with a reason
+   - `out/oscal/component-definition.json`, `out/oscal/assessment-results.json`
+   - `out/report.md`: the deterministic report
+3. **Review.** Read `out/report.md` and `out/mapping.json`. Summarize for the
+   user: controls not satisfied, the highest-severity findings, coverage gaps,
+   and controls not assessed.
+4. **Enrich (optional, on request).** You may rewrite prose in `out/report.md`
+   to be clearer for an auditor. You must not change any status, add or remove
+   a finding, or move a finding between a control and the coverage-gap list.
+5. **Propose, don't patch the bundle.** If a coverage gap looks like it belongs
+   to an existing control, propose a `rule_ids` addition to the relevant
+   guardrail concept for human review. Do not edit `knowledge/` unasked.
+
+## Scope
+
+Operates only on this repository's `app/` and `knowledge/`. Reads no external
+systems, credentials, or production infrastructure. `app/` is intentionally
+vulnerable; never deploy it.
