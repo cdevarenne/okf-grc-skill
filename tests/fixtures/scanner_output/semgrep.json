@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "check_id": "policies.semgrep.drf-allowany",
+      "path": "app/widgets/views.py",
+      "start": {
+        "line": 11
+      },
+      "extra": {
+        "message": "DRF view allows unauthenticated access (AllowAny); require an authenticated permission class.",
+        "severity": "ERROR"
+      }
+    }
+  ],
+  "errors": []
+}

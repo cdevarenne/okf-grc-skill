@@ -1,0 +1,6 @@
+[
+  {"filename": "app/k8s/deployment.yaml", "namespace": "no_public_bucket", "successes": 1},
+  {"filename": "app/k8s/deployment.yaml", "namespace": "deny_latest_tag", "successes": 0,
+   "failures": [{"msg": "container \"api\" uses unpinned image \"ghcr.io/example/widgets-api:latest\"",
+                 "metadata": {"query": "data.deny_latest_tag.deny"}}]}
+]

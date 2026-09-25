@@ -1,0 +1,37 @@
+{
+  "Results": [
+    {
+      "Target": "Dockerfile",
+      "Class": "config",
+      "Misconfigurations": [
+        {
+          "ID": "DS-0002",
+          "Title": "Image user should not be 'root'",
+          "Message": "Specify at least 1 USER command in Dockerfile with non-root user as argument",
+          "Severity": "HIGH",
+          "Status": "FAIL"
+        },
+        {
+          "ID": "DS-0026",
+          "Title": "No HEALTHCHECK defined",
+          "Message": "Add HEALTHCHECK instruction in your Dockerfile",
+          "Severity": "LOW",
+          "Status": "FAIL"
+        }
+      ]
+    },
+    {
+      "Target": "k8s/deployment.yaml",
+      "Class": "config",
+      "Misconfigurations": [
+        {
+          "ID": "KSV-0013",
+          "Title": "Image tag \":latest\" used",
+          "Message": "Container 'api' of Deployment 'widgets-api' should specify an image tag",
+          "Severity": "MEDIUM",
+          "Status": "FAIL"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "Results": [
+    {
+      "Target": "requirements.txt",
+      "Class": "lang-pkgs",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2023-31047",
+          "PkgName": "Django",
+          "InstalledVersion": "4.2.0",
+          "Severity": "CRITICAL",
+          "Title": "python-django: Potential bypass of validation when uploading multiple files using one form field"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "check_type": "terraform",
+    "results": {
+      "failed_checks": [
+        {
+          "check_id": "CKV_GCP_28",
+          "check_name": "Ensure that Cloud Storage bucket is not anonymously or publicly accessible",
+          "file_path": "/infra/main.tf",
+          "resource": "google_storage_bucket_iam_member.public_read",
+          "severity": null
+        }
+      ]
+    }
+  },
+  {
+    "check_type": "kubernetes",
+    "results": {
+      "failed_checks": [
+        {
+          "check_id": "CKV_K8S_14",
+          "check_name": "Image Tag should be fixed - not latest or blank",
+          "file_path": "/k8s/deployment.yaml",
+          "resource": "Deployment.default.widgets-api",
+          "severity": null
+        }
+      ]
+    }
+  },
+  {
+    "check_type": "dockerfile",
+    "results": {
+      "failed_checks": [
+        {
+          "check_id": "CKV_DOCKER_2",
+          "check_name": "Ensure that HEALTHCHECK instructions have been added to container images",
+          "file_path": "/Dockerfile",
+          "resource": "/Dockerfile.",
+          "severity": null
+        }
+      ]
+    }
+  }
+]
