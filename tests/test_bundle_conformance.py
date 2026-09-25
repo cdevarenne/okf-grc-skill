@@ -1,0 +1,77 @@
+"""The real knowledge/ bundle: OKF v0.2 conformance plus this repo's grounding conventions."""
+
+import re
+from pathlib import Path
+
+import pytest
+import yaml
+
+from okf_lib import load_bundle
+
+KNOWLEDGE = Path(__file__).parent.parent / "knowledge"
+TOOLS = {"semgrep", "trivy", "checkov", "conftest"}
+TYPES = {"SOC 2 Control", "Stack Component", "Rego Policy", "Semgrep Rule", "Scanner", "Reference"}
+BUNDLE = load_bundle(KNOWLEDGE)  # raises BundleError on a missing or empty `type` (OKF §11)
+
+
+def test_bundle_has_the_five_controls() -> None:
+    assert [c.code for c in BUNDLE.controls()] == ["cc6.1", "cc6.6", "cc7.1", "cc7.2", "cc8.1"]
+
+
+def test_types_are_the_documented_set() -> None:
+    assert {c.type for c in BUNDLE.concepts.values()} <= TYPES
+
+
+@pytest.mark.parametrize("concept", BUNDLE.concepts.values(), ids=lambda c: c.id)
+def test_required_metadata(concept) -> None:
+    fm = concept.frontmatter
+    assert fm.get("title") and fm.get("description") and fm.get("tags"), concept.path
+    assert fm.get("generated", {}).get("by") and fm["generated"].get("at"), concept.path
+
+
+@pytest.mark.parametrize("concept", [c for c in BUNDLE.concepts.values() if c.rule_ids], ids=lambda c: c.id)
+def test_rule_declarations_are_grounded(concept) -> None:
+    for entry in concept.rule_ids:
+        tool, _, rule = entry.partition(":")
+        assert tool in TOOLS and rule, f"{concept.path}: malformed rule id {entry!r}"
+        assert rule != "*", f"{concept.path}: bare wildcard {entry!r} would map every {tool} finding"
+    assert len(concept.control_tags) == 1, f"{concept.path}: rule_ids need exactly one control tag"
+
+
+def test_every_control_tag_names_a_control() -> None:
+    for concept in BUNDLE.concepts.values():
+        for tag in concept.control_tags:
+            assert BUNDLE.control(tag), f"{concept.path}: tag {tag} has no control concept"
+
+
+def test_controls_carry_their_own_code_as_tag() -> None:
+    for control in BUNDLE.controls():
+        assert control.code in control.tags, control.path
+
+
+def test_no_broken_links() -> None:
+    for concept in BUNDLE.concepts.values():
+        for link in concept.links:
+            assert link in BUNDLE.concepts, f"{concept.path}: broken link to {link}"
+
+
+def test_index_files_have_no_frontmatter_except_root_version() -> None:
+    for index in KNOWLEDGE.rglob("index.md"):
+        text = index.read_text(encoding="utf-8")
+        if index.parent == KNOWLEDGE:
+            fm = yaml.safe_load(text.split("---\n")[1])
+            assert fm == {"okf_version": "0.2"}
+        else:
+            assert not text.startswith("---"), index
+
+
+def test_log_dates_are_iso() -> None:
+    for log in KNOWLEDGE.rglob("log.md"):
+        for heading in re.findall(r"^## (.+)$", log.read_text(encoding="utf-8"), re.M):
+            assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", heading), f"{log}: {heading}"
+
+
+def test_links_are_relative() -> None:
+    """The pinned OKF visualizer ignores bundle-absolute links, so the bundle uses relative ones."""
+    for concept in BUNDLE.concepts.values():
+        assert "](/" not in concept.body, f"{concept.path}: use a relative link"
