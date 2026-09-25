@@ -91,6 +91,7 @@ out/
 .venv/
 __pycache__/
 .pytest_cache/
+.DS_Store
 ```
 
 Run: `uv sync --python 3.14`
