@@ -1,0 +1,17 @@
+rules:
+  - id: drf-allowany
+    languages: [python]
+    severity: ERROR
+    message: DRF view allows unauthenticated access (AllowAny); require an authenticated permission class.
+    pattern-either:
+      - pattern: permission_classes = [..., AllowAny, ...]
+      - pattern: permission_classes = (..., AllowAny, ...)
+      - pattern: permission_classes = AllowAny
+      - pattern: |
+          @permission_classes([..., AllowAny, ...])
+          def $VIEW(...):
+              ...
+      - pattern: |
+          @permission_classes((..., AllowAny, ...))
+          def $VIEW(...):
+              ...

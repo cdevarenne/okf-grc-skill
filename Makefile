@@ -26,6 +26,7 @@ render:
 test:
 	uv run pytest
 	$(TOOLBIN)/conftest verify -p policies/rego --no-color
+	$(TOOLBIN)/semgrep --test policies/semgrep
 
 test-integration:
 	uv run pytest -m integration
