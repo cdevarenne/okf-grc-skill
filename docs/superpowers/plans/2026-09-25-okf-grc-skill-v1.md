@@ -630,13 +630,36 @@ git commit -m "Add sample app with seeded issues" -m "Closes #2"
 ## Task 3: Guardrail policies: Rego and Semgrep
 
 **Files:**
-- Create: `policies/rego/{deny_latest_tag,require_non_root,no_public_bucket}.rego`, `policies/semgrep/drf-allowany.yaml`
-- Test: `policies/rego/*_test.rego`
+- Create: `policies/rego/lib/k8s.rego`, `policies/rego/{deny_latest_tag,require_non_root,no_public_bucket}.rego`, `policies/semgrep/drf-allowany.yaml`
+- Modify: `Makefile` (the `test` target also runs the Semgrep rule tests)
+- Test: `policies/rego/**/*_test.rego`, `policies/semgrep/drf-allowany.py` (Semgrep's annotated rule-test file)
 
 **Interfaces:**
-- Produces: Conftest rule ids = Rego package names `deny_latest_tag`, `require_non_root`, `no_public_bucket`; Semgrep rule id `drf-allowany`. Task 5 declares these in `rule_ids`.
+- Produces: Conftest rule ids = Rego package names `deny_latest_tag`, `require_non_root`, `no_public_bucket`; Semgrep rule id `drf-allowany`. Task 5 declares these in `rule_ids`. The helper package `lib.k8s` has no `deny` rule, so it never produces findings.
+
+The Kubernetes policies cover every workload kind that runs a pod (Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob), init containers included, through the shared `lib.k8s` helper. The Semgrep rule covers the list, tuple, and decorator forms of `AllowAny`. Both broadenings came from the adversarial review of the plan.
 
 - [ ] **Step 1: Write the failing Rego tests.**
+
+`policies/rego/lib/k8s_test.rego`:
+
+```rego
+package lib.k8s
+
+import rego.v1
+
+c := {"name": "api", "image": "x"}
+
+test_pod if count(containers) == 1 with input as {"kind": "Pod", "spec": {"containers": [c]}}
+
+test_statefulset if count(containers) == 1 with input as {"kind": "StatefulSet", "spec": {"template": {"spec": {"containers": [c]}}}}
+
+test_cronjob if count(containers) == 1 with input as {"kind": "CronJob", "spec": {"jobTemplate": {"spec": {"template": {"spec": {"containers": [c]}}}}}}
+
+test_init_containers_included if count(containers) == 2 with input as {"kind": "Pod", "spec": {"containers": [c], "initContainers": [{"name": "init", "image": "y"}]}}
+
+test_service_has_no_containers if count(containers) == 0 with input as {"kind": "Service", "spec": {}}
+```
 
 `policies/rego/deny_latest_tag_test.rego`:
 
@@ -656,6 +679,14 @@ test_registry_port_is_not_a_tag if count(deny) == 1 with input as deployment("re
 test_version_tag_allowed if count(deny) == 0 with input as deployment("ghcr.io/example/api:1.4.2")
 
 test_digest_allowed if count(deny) == 0 with input as deployment("ghcr.io/example/api@sha256:0123abcd")
+
+test_other_workload_kinds_checked if {
+	count(deny) == 1 with input as {"kind": "CronJob", "spec": {"jobTemplate": {"spec": {"template": {"spec": {"containers": [{"name": "job", "image": "busybox:latest"}]}}}}}}
+}
+
+test_init_container_checked if {
+	count(deny) == 1 with input as {"kind": "Pod", "spec": {"containers": [{"name": "a", "image": "a:1.0"}], "initContainers": [{"name": "i", "image": "i:latest"}]}}
+}
 ```
 
 `policies/rego/require_non_root_test.rego`:
@@ -667,11 +698,21 @@ import rego.v1
 
 deployment(ctx) := {"kind": "Deployment", "spec": {"template": {"spec": {"containers": [object.union({"name": "api"}, ctx)]}}}}
 
+pod(pod_ctx, ctx) := {"kind": "Pod", "spec": {"securityContext": pod_ctx, "containers": [object.union({"name": "api"}, ctx)]}}
+
 test_missing_context_denied if count(deny) == 1 with input as deployment({})
 
 test_explicit_root_denied if count(deny) == 1 with input as deployment({"securityContext": {"runAsNonRoot": false}})
 
 test_non_root_allowed if count(deny) == 0 with input as deployment({"securityContext": {"runAsNonRoot": true}})
+
+test_pod_level_setting_inherited if count(deny) == 0 with input as pod({"runAsNonRoot": true}, {})
+
+test_container_override_wins if count(deny) == 1 with input as pod({"runAsNonRoot": true}, {"securityContext": {"runAsNonRoot": false}})
+
+test_statefulset_checked if {
+	count(deny) == 1 with input as {"kind": "StatefulSet", "spec": {"template": {"spec": {"containers": [{"name": "db"}]}}}}
+}
 
 test_other_kinds_ignored if count(deny) == 0 with input as {"kind": "Service"}
 ```
@@ -697,22 +738,45 @@ test_no_buckets_allowed if count(deny) == 0 with input as {"resource": {}}
 - [ ] **Step 2: Run them to confirm they fail.**
 
 Run: `.tools/bin/conftest verify -p policies/rego --no-color`
-Expected: errors, because `deny` is undefined in each package.
+Expected: compile errors such as `rego_unsafe_var_error: var containers is unsafe`, because no policy defines the rules yet.
 
-- [ ] **Step 3: Write the policies.** Conftest parses each HCL block into a list, so `no_public_bucket` iterates `blocks`.
+- [ ] **Step 3: Write the helper and the policies.** Conftest parses each HCL block into a list, so `no_public_bucket` iterates `blocks`. In `require_non_root`, a container-level `runAsNonRoot` overrides the pod-level one, matching Kubernetes semantics.
+
+`policies/rego/lib/k8s.rego`:
+
+```rego
+package lib.k8s
+
+import rego.v1
+
+# Workload kinds whose pods come from spec.template.
+template_kinds := {"Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job"}
+
+pod_spec := input.spec if input.kind == "Pod"
+
+pod_spec := input.spec.template.spec if input.kind in template_kinds
+
+pod_spec := input.spec.jobTemplate.spec.template.spec if input.kind == "CronJob"
+
+# Every container the workload runs, init containers included.
+containers contains container if {
+	some field in ["containers", "initContainers"]
+	some container in object.get(pod_spec, field, [])
+}
+```
 
 `policies/rego/deny_latest_tag.rego`:
 
 ```rego
 package deny_latest_tag
 
+import data.lib.k8s
 import rego.v1
 
 deny contains msg if {
-	input.kind == "Deployment"
-	some container in input.spec.template.spec.containers
+	some container in k8s.containers
 	not pinned(container.image)
-	msg := sprintf("container %q uses unpinned image %q", [container.name, container.image])
+	msg := sprintf("%s container %q uses unpinned image %q", [input.kind, container.name, container.image])
 }
 
 pinned(image) if contains(image, "@sha256:")
@@ -730,13 +794,21 @@ pinned(image) if {
 ```rego
 package require_non_root
 
+import data.lib.k8s
 import rego.v1
 
 deny contains msg if {
-	input.kind == "Deployment"
-	some container in input.spec.template.spec.containers
-	not container.securityContext.runAsNonRoot == true
-	msg := sprintf("container %q does not set runAsNonRoot: true", [container.name])
+	some container in k8s.containers
+	not runs_as_non_root(container)
+	msg := sprintf("%s container %q does not run as non-root (set runAsNonRoot: true)", [input.kind, container.name])
+}
+
+# A container-level setting overrides the pod-level one.
+runs_as_non_root(container) if container.securityContext.runAsNonRoot == true
+
+runs_as_non_root(container) if {
+	object.get(container, ["securityContext", "runAsNonRoot"], null) == null
+	k8s.pod_spec.securityContext.runAsNonRoot == true
 }
 ```
 
@@ -759,10 +831,10 @@ deny contains msg if {
 
 - [ ] **Step 4: Run the tests to confirm they pass.**
 
-Run: `make test`
-Expected: pytest passes and Conftest reports `13 tests, 13 passed`.
+Run: `.tools/bin/conftest verify -p policies/rego --no-color`
+Expected: `23 tests, 23 passed, 0 warnings, 0 failures, 0 exceptions, 0 skipped`.
 
-- [ ] **Step 5: Write the vendored Semgrep rule.**
+- [ ] **Step 5: Write the Semgrep rule and its annotated test file.** `# ruleid:` marks a line that must match and `# ok:` a line that must not; `semgrep --test` checks both.
 
 `policies/semgrep/drf-allowany.yaml`:
 
@@ -772,22 +844,119 @@ rules:
     languages: [python]
     severity: ERROR
     message: DRF view allows unauthenticated access (AllowAny); require an authenticated permission class.
-    pattern: permission_classes = [..., AllowAny, ...]
+    pattern-either:
+      - pattern: permission_classes = [..., AllowAny, ...]
+      - pattern: permission_classes = (..., AllowAny, ...)
+      - pattern: permission_classes = AllowAny
+      - pattern: |
+          @permission_classes([..., AllowAny, ...])
+          def $VIEW(...):
+              ...
+      - pattern: |
+          @permission_classes((..., AllowAny, ...))
+          def $VIEW(...):
+              ...
 ```
 
-- [ ] **Step 6: Confirm each guardrail fires on its seeded file.**
+`policies/semgrep/drf-allowany.py`:
+
+```python
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+
+
+class ListForm:
+    # ruleid: drf-allowany
+    permission_classes = [AllowAny]
+
+
+class TupleForm:
+    # ruleid: drf-allowany
+    permission_classes = (IsAuthenticated, AllowAny)
+
+
+# ruleid: drf-allowany
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def create_widget(request):
+    return None
+
+
+# ruleid: drf-allowany
+@api_view(["POST"])
+@permission_classes((AllowAny,))
+def delete_widget(request):
+    return None
+
+
+class Authenticated:
+    # ok: drf-allowany
+    permission_classes = [IsAuthenticated]
+```
+
+- [ ] **Step 6: Confirm the rule test can fail.** `semgrep --test` without a rule file reports `No unit tests found` and exits 0, so the red check is a mutation. Delete the line `- pattern: permission_classes = (..., AllowAny, ...)` from the rule and run `.tools/bin/semgrep --test policies/semgrep`.
+Expected: `✖ drf-allowany` / `missed lines: [12]`, exit 1. Restore the line and re-run. Expected: `✓ All tests passed`, exit 0.
+
+- [ ] **Step 7: Add the Semgrep rule tests to `make test`.** Replace the `Makefile` with the version below; only the `test` target changes.
+
+`Makefile`:
+
+```make
+include tools.lock
+
+SCRIPTS := .claude/skills/grc-continuous-compliance/scripts
+PY := uv run python
+TOOLBIN := $(CURDIR)/.tools/bin
+export PATH := $(TOOLBIN):$(PATH)
+export TRIVY_CACHE_DIR := $(CURDIR)/.tools/trivy-cache
+OKF := reference-agent @ git+https://github.com/GoogleCloudPlatform/open-knowledge-format@$(OKF_COMMIT)
+
+.PHONY: bootstrap scan render test test-integration clean
+
+bootstrap:
+	uv sync
+	./scripts/bootstrap.sh
+
+scan:
+	$(PY) $(SCRIPTS)/run_scan.py --target app --out out
+	$(PY) $(SCRIPTS)/map_findings.py --knowledge knowledge --out out
+	$(PY) $(SCRIPTS)/to_oscal.py --knowledge knowledge --out out
+	$(PY) $(SCRIPTS)/render_report.py --knowledge knowledge --out out
+
+render:
+	mkdir -p out
+	uvx --python 3.14 --from "$(OKF)" reference-agent visualize --bundle knowledge --out out/knowledge-viz.html
+
+test:
+	uv run pytest
+	$(TOOLBIN)/conftest verify -p policies/rego --no-color
+	$(TOOLBIN)/semgrep --test policies/semgrep
+
+test-integration:
+	uv run pytest -m integration
+
+clean:
+	rm -rf out
+```
+
+- [ ] **Step 8: Run the full test target.**
+
+Run: `make test`
+Expected: pytest passes, Conftest reports `23 tests, 23 passed`, and Semgrep reports `1/1: ✓ All tests passed`.
+
+- [ ] **Step 9: Confirm each guardrail fires on its seeded file.**
 
 ```bash
-.tools/bin/conftest test app/k8s/deployment.yaml app/infra/main.tf -p policies/rego --all-namespaces --no-color
+.tools/bin/conftest test app/k8s/deployment.yaml app/k8s/service.yaml app/infra/main.tf -p policies/rego --all-namespaces --no-color
 .tools/bin/semgrep scan --config policies/semgrep --metrics=off --json --quiet app | python3 -c 'import json,sys; print([r["check_id"] for r in json.load(sys.stdin)["results"]])'
 ```
 
-Expected: Conftest shows three `FAIL` lines (`require_non_root` and `deny_latest_tag` on `deployment.yaml`, `no_public_bucket` on `main.tf`) and exits 1. Semgrep prints `['policies.semgrep.drf-allowany']`.
+Expected: Conftest shows exactly three `FAIL` lines and exits 1: `require_non_root` and `deny_latest_tag` on `deployment.yaml`, and `no_public_bucket` on `main.tf`. Semgrep prints `['policies.semgrep.drf-allowany']`; it reads only `.yaml` rule files from the config directory, so the `.py` test file is not scanned as a rule.
 
-- [ ] **Step 7: Commit.**
+- [ ] **Step 10: Commit.**
 
 ```bash
-git add policies
+git add policies Makefile
 git commit -m "Add Rego guardrails and Semgrep rule" -m "Closes #3"
 ```
 
@@ -1460,7 +1629,7 @@ acted on.
 
 No scanner in this bundle evidences runtime monitoring. A runtime detection
 tool is planned for a later version, so this control is reported as
-not assessed rather than satisfied.
+not assessed rather than as having no violations.
 
 # Applies to
 
@@ -1564,7 +1733,8 @@ generated:
 - `out/oscal/component-definition.json` — each [stack component](../stack/index.md)
   with the controls that apply to it as implemented requirements.
 - `out/oscal/assessment-results.json` — one result: findings per assessed
-  control, observations per scanner finding, and coverage gaps as open risks.
+  control with violations, observations per scanner finding, and coverage gaps
+  as open risks. A clean control gets no finding: automation never attests.
 
 # Subset
 
@@ -2075,7 +2245,7 @@ git commit -m "Record human review of the bundle" -m "Closes #6"
 
 **Interfaces:**
 - Consumes: `load_bundle`, `Bundle.by_rule`, `.control`, `.controls`, `.of_type`, `GUARDRAIL_TYPES`, `SCANNER_TYPE`.
-- Produces: `map_findings(bundle: Bundle, findings: list[dict]) -> dict` returning `{"controls": {code: {status, findings, evidenced_by, satisfied_by}}, "unmapped": [{finding, reason}]}`. `status` ∈ `not-satisfied|satisfied|not-assessed`; `reason` ∈ `no-rule-match|control-not-in-bundle`. The CLI reads `out/findings.json` and writes `out/mapping.json`.
+- Produces: `map_findings(bundle: Bundle, findings: list[dict]) -> dict` returning `{"controls": {code: {status, findings, evidenced_by, satisfied_by}}, "unmapped": [{finding, reason}]}`. `status` ∈ `not-satisfied|no-violations-detected|not-assessed`; `reason` ∈ `no-rule-match|control-not-in-bundle`. The CLI reads `out/findings.json` and writes `out/mapping.json`.
 
 - [ ] **Step 1: Write the hand-written findings.** Three mapped (one through the `CVE-*` glob), one `no-rule-match`, one `control-not-in-bundle`. These fixtures are permanent.
 
@@ -2149,7 +2319,7 @@ def test_statuses(mapping: dict) -> None:
         "cc6.1": "not-satisfied",
         "cc7.1": "not-satisfied",
         "cc7.2": "not-assessed",
-        "cc8.1": "satisfied",
+        "cc8.1": "no-violations-detected",
     }
 
 
@@ -2217,7 +2387,7 @@ def map_findings(bundle: Bundle, findings: list[Finding]) -> dict[str, Any]:
         if entry["findings"]:
             entry["status"] = "not-satisfied"
         elif entry["evidenced_by"] or entry["satisfied_by"]:
-            entry["status"] = "satisfied"
+            entry["status"] = "no-violations-detected"
         else:
             entry["status"] = "not-assessed"
     return {"controls": controls, "unmapped": unmapped}
@@ -2258,7 +2428,7 @@ git commit -m "Add grounded finding-to-control mapping" -m "Closes #7"
 - Test: `tests/test_run_scan.py`
 
 **Interfaces:**
-- Produces: `scan(repo: Path, target_dir: str) -> list[dict]` producing findings `{tool, rule_id, severity, target, message, tags}`; `normalize_{semgrep,trivy,checkov,conftest}(doc, target_dir) -> list[dict]`; `dedupe(findings)`; `run_tool(tool, argv, cwd) -> Any`; `ScanError`. The CLI (`--target app --out out`, run from the repo root) writes `out/findings.json`.
+- Produces: `scan(repo: Path, target_dir: str) -> list[dict]` producing findings `{tool, rule_id, severity, target, message, tags}`; `normalize_{semgrep,trivy,checkov,conftest}(doc, target_dir) -> list[dict]`; `dedupe(findings)` (collapses only fully identical findings: key includes `message`, since one rule can fire on several resources in one file); `run_tool(tool, argv, cwd) -> Any`; `ScanError`. The CLI (`--target app --out out`, run from the repo root) writes `out/findings.json`.
 
 - [ ] **Step 1: Write the scanner-output fixtures.** They are trimmed from real pinned-scanner output on the sample app, with the fields kept as the tools emit them.
 
@@ -2483,11 +2653,11 @@ def test_conftest_uses_namespace_as_rule_id_and_skips_successes() -> None:
     ]
 
 
-def test_dedupe_collapses_exact_duplicates_only() -> None:
-    a = {"tool": "trivy", "rule_id": "X", "target": "t", "severity": "low", "message": "1", "tags": []}
-    b = {**a, "message": "2"}
-    c = {**a, "tool": "checkov"}
-    assert dedupe([a, b, c]) == [a, c]
+def test_dedupe_collapses_identical_findings_only() -> None:
+    a = {"tool": "trivy", "rule_id": "X", "target": "t", "severity": "low", "message": "container a", "tags": []}
+    other_resource = {**a, "message": "container b"}
+    other_tool = {**a, "tool": "checkov"}
+    assert dedupe([a, dict(a), other_resource, other_tool]) == [a, other_resource, other_tool]
 
 
 def test_run_tool_missing_binary(tmp_path: Path) -> None:
@@ -2596,10 +2766,13 @@ def normalize_conftest(doc: list[dict[str, Any]], target_dir: str) -> list[Findi
 
 
 def dedupe(findings: list[Finding]) -> list[Finding]:
-    """Collapse exact (tool, rule_id, target) duplicates, keeping first occurrence order."""
-    seen: dict[tuple[str, str, str], Finding] = {}
+    """Collapse identical findings, keeping first-occurrence order.
+
+    The message is part of the key: one rule can fire on several resources in one file.
+    """
+    seen: dict[tuple[str, str, str, str], Finding] = {}
     for f in findings:
-        seen.setdefault((f["tool"], f["rule_id"], f["target"]), f)
+        seen.setdefault((f["tool"], f["rule_id"], f["target"], f["message"]), f)
     return list(seen.values())
 
 
@@ -2619,7 +2792,11 @@ def run_tool(tool: str, argv: list[str], cwd: Path) -> Any:
 def scan(repo: Path, target_dir: str) -> list[Finding]:
     """Run all four scanners over `repo/target_dir` and return deduplicated findings."""
     target = repo / target_dir
-    conftest_inputs = sorted(p.relative_to(repo).as_posix() for p in [*target.glob("k8s/*.yaml"), *target.glob("infra/*.tf")])
+    conftest_inputs = sorted(
+        p.relative_to(repo).as_posix()
+        for pattern in ("k8s/**/*.yaml", "k8s/**/*.yml", "infra/**/*.tf")
+        for p in target.glob(pattern)
+    )
     runs: list[tuple[str, list[str], Path, Callable[[Any, str], list[Finding]]]] = [
         ("semgrep", ["semgrep", "scan", "--config", "policies/semgrep", "--metrics=off", "--json", "--quiet", target_dir], repo, normalize_semgrep),
         ("trivy", ["trivy", "config", "--quiet", "--format", "json", target_dir], repo, normalize_trivy),
@@ -2755,11 +2932,19 @@ def test_assessment_results_is_schema_valid(bundle: Bundle, mapping: dict) -> No
     validate(assessment_results(bundle, mapping, NOW), "oscal_assessment-results_schema.json")
 
 
-def test_findings_target_assessed_controls_only(bundle: Bundle, mapping: dict) -> None:
+def test_findings_only_for_violated_controls(bundle: Bundle, mapping: dict) -> None:
     (result,) = assessment_results(bundle, mapping, NOW)["assessment-results"]["results"]
     states = {f["target"]["target-id"]: f["target"]["status"]["state"] for f in result["findings"]}
-    assert states == {"cc6.1": "not-satisfied", "cc7.1": "not-satisfied", "cc8.1": "satisfied"}
-    assert "cc7.2" in result["remarks"]
+    assert states == {"cc6.1": "not-satisfied", "cc7.1": "not-satisfied"}
+
+
+def test_clean_controls_are_never_attested(bundle: Bundle, mapping: dict) -> None:
+    (result,) = assessment_results(bundle, mapping, NOW)["assessment-results"]["results"]
+    assert "satisfied" not in {f["target"]["status"]["state"] for f in result["findings"]}
+    assert "not a control attestation): cc8.1" in result["remarks"]
+    assert "Not assessed (no in-bundle scanner or policy): cc7.2" in result["remarks"]
+    reviewed = result["reviewed-controls"]["control-selections"][0]["include-controls"]
+    assert [c["control-id"] for c in reviewed] == ["cc6.1", "cc7.1", "cc8.1"]
 
 
 def test_coverage_gaps_are_risks_not_findings(bundle: Bundle, mapping: dict) -> None:
@@ -2802,7 +2987,7 @@ def test_validator_rejects_bad_token(bundle: Bundle) -> None:
 Run: `uv run pytest tests/test_to_oscal.py -q`
 Expected: FAIL, `ModuleNotFoundError: No module named 'to_oscal'`.
 
-- [ ] **Step 5: Implement.** Coverage gaps become open `risks`, never `findings`.
+- [ ] **Step 5: Implement.** Only controls with violations get an OSCAL `finding`, always `not-satisfied`. Controls with no violations are listed in `remarks`, because automation evidences a control but never attests it. Coverage gaps become open `risks`, never `findings`.
 
 `.claude/skills/grc-continuous-compliance/scripts/to_oscal.py`:
 
@@ -2889,27 +3074,50 @@ def _observation(f: Json, now: str) -> Json:
     }
 
 
+def _remarks(mapping: Json) -> str:
+    """Controls without an OSCAL finding, stated so their absence is not read as a pass."""
+    by_status = {
+        status: sorted(code for code, c in mapping["controls"].items() if c["status"] == status)
+        for status in ("no-violations-detected", "not-assessed")
+    }
+    parts = []
+    if by_status["no-violations-detected"]:
+        parts.append(
+            "No violations detected by automated checks (not a control attestation): "
+            + ", ".join(by_status["no-violations-detected"])
+        )
+    if by_status["not-assessed"]:
+        parts.append("Not assessed (no in-bundle scanner or policy): " + ", ".join(by_status["not-assessed"]))
+    return ". ".join(parts)
+
+
 def assessment_results(bundle: Bundle, mapping: Json, now: str) -> Json:
-    """Findings per assessed control; unmapped findings become open risks, never control findings."""
+    """Findings only for controls with violations; unmapped findings become open risks, never findings.
+
+    A clean automated scan never produces a `satisfied` finding: automation evidences a
+    control but does not attest it.
+    """
     all_findings = [f for c in mapping["controls"].values() for f in c["findings"]]
     all_findings += [u["finding"] for u in mapping["unmapped"]]
     observations = {_finding_key(f): _observation(f, now) for f in all_findings}
-    assessed = {code: c for code, c in mapping["controls"].items() if c["status"] != "not-assessed"}
-    not_assessed = sorted(set(mapping["controls"]) - set(assessed))
+    assessed = sorted(code for code, c in mapping["controls"].items() if c["status"] != "not-assessed")
     findings = []
-    for code, entry in sorted(assessed.items()):
+    for code in assessed:
+        entry = mapping["controls"][code]
+        if entry["status"] != "not-satisfied":
+            continue
         control = bundle.control(code)
-        finding: Json = {
-            "uuid": _uuid("finding", code),
-            "title": control.title if control else code,
-            "description": f"{len(entry['findings'])} open finding(s).",
-            "target": {"type": "objective-id", "target-id": code, "status": {"state": entry["status"]}},
-        }
-        if entry["findings"]:
-            finding["related-observations"] = [
-                {"observation-uuid": observations[_finding_key(f)]["uuid"]} for f in entry["findings"]
-            ]
-        findings.append(finding)
+        findings.append(
+            {
+                "uuid": _uuid("finding", code),
+                "title": control.title if control else code,
+                "description": f"{len(entry['findings'])} open finding(s).",
+                "target": {"type": "objective-id", "target-id": code, "status": {"state": "not-satisfied"}},
+                "related-observations": [
+                    {"observation-uuid": observations[_finding_key(f)]["uuid"]} for f in entry["findings"]
+                ],
+            }
+        )
     risks = [
         {
             "uuid": _uuid("risk", _finding_key(u["finding"])),
@@ -2927,7 +3135,7 @@ def assessment_results(bundle: Bundle, mapping: Json, now: str) -> Json:
         "description": "Scanner findings mapped to SOC 2 criteria through the OKF knowledge bundle.",
         "start": now,
         "reviewed-controls": {
-            "control-selections": [{"include-controls": [{"control-id": code} for code in sorted(assessed)]}]
+            "control-selections": [{"include-controls": [{"control-id": code} for code in assessed]}]
         },
     }
     if observations:
@@ -2936,8 +3144,8 @@ def assessment_results(bundle: Bundle, mapping: Json, now: str) -> Json:
         result["risks"] = risks
     if findings:
         result["findings"] = findings
-    if not_assessed:
-        result["remarks"] = "Not assessed (no in-bundle scanner or policy): " + ", ".join(not_assessed)
+    if remarks := _remarks(mapping):
+        result["remarks"] = remarks
     return {
         "assessment-results": {
             "uuid": _uuid("assessment-results"),
@@ -2972,7 +3180,7 @@ if __name__ == "__main__":
 - [ ] **Step 6: Run the tests to confirm they pass.**
 
 Run: `uv run pytest tests/test_to_oscal.py -q`
-Expected: `8 passed`.
+Expected: `9 passed`.
 
 - [ ] **Step 7: Commit.**
 
@@ -3002,6 +3210,8 @@ git commit -m "Add OSCAL 1.2.3 output" -m "Closes #9"
 
 Generated 2026-09-25T12:00:00+00:00. Every status below is derived from scanner findings joined to
 controls declared in the OKF knowledge bundle; nothing is mapped without a declaration.
+`no-violations-detected` means automated checks found nothing for that control;
+it is evidence, not a control attestation.
 
 ## Summary
 
@@ -3010,7 +3220,7 @@ controls declared in the OKF knowledge bundle; nothing is mapped without a decla
 | cc6.1 | not-satisfied | 2 |
 | cc7.1 | not-satisfied | 1 |
 | cc7.2 | not-assessed | 0 |
-| cc8.1 | satisfied | 0 |
+| cc8.1 | no-violations-detected | 0 |
 
 ## Controls
 
@@ -3041,7 +3251,7 @@ controls declared in the OKF knowledge bundle; nothing is mapped without a decla
 
 ### CC8.1 — Change Management
 
-**Status:** satisfied
+**Status:** no-violations-detected
 
 **Evidence:** [Deny latest tag](../knowledge/policies/deny-latest-tag.md)
 
@@ -3143,6 +3353,8 @@ def render_report(bundle: Bundle, mapping: Json, now: str) -> str:
         "",
         f"Generated {now}. Every status below is derived from scanner findings joined to",
         "controls declared in the OKF knowledge bundle; nothing is mapped without a declaration.",
+        "`no-violations-detected` means automated checks found nothing for that control;",
+        "it is evidence, not a control attestation.",
         "",
         "## Summary",
         "",
@@ -3311,9 +3523,9 @@ subset, not a complete OSCAL implementation.
 | `import-ap.href` | **placeholder** `#assessment-plan-not-modeled`: v1 has no assessment plan |
 | `results[0].reviewed-controls` | every control with status other than `not-assessed` |
 | `results[0].observations[]` | one per scanner finding; `methods: [TEST]` |
-| `results[0].findings[]` | one per assessed control; `target.status.state` is `satisfied` or `not-satisfied` |
+| `results[0].findings[]` | one per control with open violations; `target.status.state` is always `not-satisfied` |
 | `results[0].risks[]` | one per unmapped finding, titled "Coverage gap: …", `status: open` |
-| `results[0].remarks` | lists controls not assessed |
+| `results[0].remarks` | lists controls with no violations detected, and controls not assessed |
 
 ## Deliberately not modeled
 
@@ -3321,6 +3533,8 @@ subset, not a complete OSCAL implementation.
 - A machine-readable SOC 2 catalog: the Trust Services Criteria are not
   published as an OSCAL catalog, so `control-id` values are the criterion codes.
 - Parties, roles, and responsible-parties.
+- A `satisfied` finding: a clean automated scan evidences a control but does not
+  attest it, so controls with no violations are listed in `remarks` instead.
 - Coverage gaps as `findings`: an OSCAL finding must target a control, and
   targeting one would invent the mapping the grounding rule forbids.
 ```
@@ -3427,7 +3641,7 @@ Expected (prototype run): `cc6.1` not-satisfied 7, `cc6.6` not-satisfied 4, `cc7
 - [ ] **Step 5: Run the full suite.**
 
 Run: `make test`
-Expected: all unit tests pass, and Conftest reports `13 tests, 13 passed`.
+Expected: all unit tests pass, Conftest reports `23 tests, 23 passed`, and Semgrep reports `1/1: ✓ All tests passed`.
 
 - [ ] **Step 6: Commit.**
 
@@ -3442,7 +3656,7 @@ git commit -m "Add end-to-end seeded-issue integration test" -m "Closes #12"
 
 **Files:**
 - Create: `docs/screenshots/knowledge-graph.png`, `docs/screenshots/report.png`
-- Modify: `README.md` (add a Screenshots section)
+- Modify: `README.md` (add Screenshots and Limits sections)
 
 This task is docs only, with no new tests. It verifies manually, as below.
 
@@ -3461,6 +3675,19 @@ Expected: `Wrote 19 concept(s), 52 edge(s) ... → out/knowledge-viz.html` (the 
 ![OKF knowledge graph](docs/screenshots/knowledge-graph.png)
 
 ![Compliance scan report](docs/screenshots/report.png)
+
+## Limits (v1)
+
+- **Evidence, not attestation.** A control with no violations is reported as
+  `no-violations-detected`, never `satisfied`. Automated scans evidence a SOC 2
+  criterion; they do not attest it.
+- **No suppression workflow.** Scanner-native inline skips (e.g. `checkov:skip`)
+  are honored by the scanners themselves; there is no triage layer for false
+  positives, so they appear as findings or coverage gaps.
+- **Static manifests only.** Helm or Kustomize output is not rendered before
+  scanning.
+- **Sized for the sample app.** Scanner JSON is read in memory, and the
+  scanner set is fixed in `run_scan.py`.
 ```
 
 - [ ] **Step 4: Check the definition of done** against spec §1:

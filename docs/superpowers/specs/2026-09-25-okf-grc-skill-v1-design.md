@@ -152,7 +152,7 @@ Tolerates unknown types, unknown keys, broken links, and missing `index.md` (OKF
 - `severity` ∈ `critical | high | medium | low | info | unknown` (normalized per tool). Checkov reports no severity without a vendor API key, so its findings are `unknown` rather than an invented level. Conftest deny rules are blocking, so they are `high`.
 - `target` is repo-relative.
 - `tags` holds tool-native tags only; the join key is `(tool, rule_id)`.
-- Exact duplicates on `(tool, rule_id, target)` are collapsed. Cross-tool duplicates are kept as corroborating evidence.
+- Only fully identical findings are collapsed (key `(tool, rule_id, target, message)`): one rule can fire on several resources in one file, and those are distinct findings. Cross-tool duplicates are kept as corroborating evidence.
 
 ### 5.4 Mapping (`out/mapping.json`)
 
@@ -182,7 +182,7 @@ Join algorithm for each finding:
 Control status:
 
 - `not-satisfied` — at least one finding attached.
-- `satisfied` — no findings, and at least one `Scanner`, `Rego Policy`, or `Semgrep Rule` concept carries the control's tag.
+- `no-violations-detected` — no findings, and at least one `Scanner`, `Rego Policy`, or `Semgrep Rule` concept carries the control's tag. This is evidence, not attestation: automated scans never report a control as `satisfied`.
 - `not-assessed` — no in-bundle scanner or policy carries the control's tag (CC7.2 in v1; runtime monitoring is v2).
 
 ## 6. Pipeline
@@ -193,7 +193,7 @@ Control status:
   - Semgrep with `policies/semgrep/`, `--metrics=off`;
   - `trivy config` and `trivy fs` on `app/`;
   - Checkov on Terraform, K8s, and the Dockerfile;
-  - Conftest with `policies/rego/` and `--all-namespaces` on the K8s manifests and the `.tf` files. Conftest parses HCL2 directly; each block parses to a list.
+  - Conftest with `policies/rego/` and `--all-namespaces` on `k8s/**/*.{yaml,yml}` and `infra/**/*.tf` under the target. Conftest parses HCL2 directly; each block parses to a list.
 
   One normalizer function per tool. Observed tool behavior the normalizers rely on:
   - Semgrep prefixes rule ids with the config path (`policies.semgrep.drf-allowany`); the normalizer keeps the last segment.
@@ -204,6 +204,7 @@ Control status:
 - **`to_oscal.py`** writes `component-definition.json` (components × control implementations) and `assessment-results.json` (findings as observations; per-control findings).
   - UUIDs are `uuid5` over stable content ids.
   - Timestamps come from an injectable `--now` for reproducible tests.
+  - Only controls with violations get an OSCAL `finding` (state `not-satisfied`). Controls with no violations detected, and controls not assessed, are listed in the result `remarks`, never as `satisfied`.
   - Unmapped findings become observations plus an open **risk** titled "Coverage gap: …". They are never OSCAL `findings`, because an OSCAL finding must target a control and targeting one would invent a mapping.
   - Placeholder values for required fields (e.g. `import-ap`) are listed in `docs/oscal-subset.md`.
 - **`render_report.py`** writes `out/report.md`:
@@ -254,7 +255,8 @@ The bundle must deliberately not declare S2's rule ids, so the gap is produced b
   - every concept has `verified`.
 
   The last check fails until human review, making the Phase 2 human-review gate executable.
-- **Rego:** `conftest verify` with a `_test.rego` per policy, plus each policy run alone against the Phase 1 files.
+- **Rego:** `conftest verify` with a `_test.rego` per policy. Kubernetes policies cover every pod-running workload kind (Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob) and init containers, via a shared `lib.k8s` helper.
+- **Semgrep:** `semgrep --test` against an annotated test file covering the list, tuple, and decorator forms of `AllowAny`.
 - **Integration (`make test-integration`):** runs `make scan`, asserts every `SEEDED.yaml` entry appears with its expected control or as the expected coverage gap, all outputs exist, and OSCAL validates. Assertions are superset (⊇), since `trivy fs` CVE results change as the vulnerability database is updated.
 - **Manual (Phase 6):** screenshots of the visualizer graph and the rendered report into `docs/screenshots/`.
 
