@@ -21,6 +21,7 @@ _CONTROL_TAG = re.compile(r"^cc\d+\.\d+$")
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.S)
 _LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 _H1 = re.compile(r"^# (.+?)\s*$", re.M)
+_RULE_PATTERN = re.compile(r"[^*?\[\]]+\*?")
 
 
 class BundleError(ValueError):
@@ -79,6 +80,12 @@ class Bundle:
             if any(_rule_matches(entry, tool, rule_id) for entry in c.rule_ids)
         ]
 
+    def declaring(self, code: str) -> list[Concept]:
+        """Concepts that declare `rule_ids` and carry control tag `code`, sorted by id."""
+        return sorted(
+            (c for c in self.concepts.values() if c.rule_ids and code in c.control_tags), key=lambda c: c.id
+        )
+
     def section(self, concept: Concept, heading: str) -> str | None:
         """Body text under `# heading`, up to the next level-1 heading."""
         matches = list(_H1.finditer(concept.body))
@@ -108,6 +115,23 @@ def _resolve_link(target: str, concept_path: str) -> str | None:
     return resolved.removesuffix(".md")
 
 
+def _string_list(rel_path: str, fm: Mapping[str, Any], key: str) -> tuple[str, ...]:
+    value = fm.get(key, [])
+    if not isinstance(value, list):
+        raise BundleError(f"{rel_path}: '{key}' must be a YAML list")
+    return tuple(str(v) for v in value)
+
+
+def _check_grounding(rel_path: str, tags: tuple[str, ...], rule_ids: tuple[str, ...]) -> None:
+    """Enforce the grounding rule: well-formed `<tool>:<prefix>[*]` entries and exactly one control tag."""
+    for entry in rule_ids:
+        tool, _, rule = entry.partition(":")
+        if not tool or not _RULE_PATTERN.fullmatch(rule):
+            raise BundleError(f"{rel_path}: rule id {entry!r} is not '<tool>:<literal prefix>[*]'")
+    if rule_ids and sum(1 for t in tags if _CONTROL_TAG.match(t)) != 1:
+        raise BundleError(f"{rel_path}: a concept declaring rule_ids needs exactly one control tag")
+
+
 def _parse(rel_path: str, text: str) -> Concept:
     m = _FRONTMATTER.match(text)
     if not m:
@@ -120,14 +144,17 @@ def _parse(rel_path: str, text: str) -> Concept:
         raise BundleError(f"{rel_path}: frontmatter has no non-empty 'type'")
     body = m.group(2)
     stem = rel_path.removesuffix(".md")
+    tags = _string_list(rel_path, fm, "tags")
+    rule_ids = _string_list(rel_path, fm, "rule_ids")
+    _check_grounding(rel_path, tags, rule_ids)
     return Concept(
         id=stem,
         path=rel_path,
         type=str(fm["type"]).strip(),
         title=str(fm.get("title") or posixpath.basename(stem)),
         description=str(fm.get("description") or ""),
-        tags=tuple(str(t) for t in fm.get("tags") or ()),
-        rule_ids=tuple(str(r) for r in fm.get("rule_ids") or ()),
+        tags=tags,
+        rule_ids=rule_ids,
         frontmatter=fm,
         body=body,
         links=tuple(

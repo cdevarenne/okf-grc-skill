@@ -73,3 +73,42 @@ def test_unknown_type_and_keys_are_tolerated(tmp_path: Path) -> None:
     assert concept.type == "Mystery"
     assert concept.frontmatter["whatever"] == 1
     assert concept.title == "c"
+
+
+def _concept(tags: str, rule_ids: str) -> str:
+    return f"---\ntype: Rego Policy\ntags: {tags}\nrule_ids: {rule_ids}\n---\n"
+
+
+@pytest.mark.parametrize(
+    ("tags", "rule_ids"),
+    [
+        ("cc6.1", '["conftest:x"]'),
+        ("[cc6.1]", "trivy:DS-0002"),
+        ("[cc6.1]", '["trivy:*"]'),
+        ("[cc6.1]", '["trivy:**"]'),
+        ("[cc6.1]", '["checkov:?*"]'),
+        ("[cc6.1]", '["x:[!_]*"]'),
+        ("[cc6.1]", '["x:*-*"]'),
+        ("[cc6.1]", '[":CVE-1"]'),
+        ("[cc6.1]", '["no-colon"]'),
+        ("[cc6.1, cc7.1]", '["conftest:x"]'),
+        ("[opa]", '["conftest:x"]'),
+    ],
+)
+def test_malformed_grounding_is_rejected(tmp_path: Path, tags: str, rule_ids: str) -> None:
+    _write(tmp_path, "p/bad.md", _concept(tags, rule_ids))
+    with pytest.raises(BundleError, match="p/bad.md"):
+        load_bundle(tmp_path)
+
+
+@pytest.mark.parametrize("rule", ["trivy:CVE-*", "trivy:GHSA-*", "checkov:CKV_K8S_14"])
+def test_literal_prefix_rules_are_accepted(tmp_path: Path, rule: str) -> None:
+    _write(tmp_path, "p/ok.md", _concept("[opa, cc6.1]", f'["{rule}"]'))
+    assert load_bundle(tmp_path).concepts["p/ok"].rule_ids == (rule,)
+
+
+def test_declaring_returns_rule_declarers_carrying_the_code() -> None:
+    bundle = load_bundle(FIXTURE)
+    assert [c.id for c in bundle.declaring("cc6.1")] == ["policies/require-non-root"]
+    assert [c.id for c in bundle.declaring("cc7.1")] == ["scanners/trivy"]
+    assert bundle.declaring("cc7.2") == []

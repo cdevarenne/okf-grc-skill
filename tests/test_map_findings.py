@@ -58,3 +58,24 @@ def test_statuses(mapping: dict) -> None:
 def test_evidence_links(mapping: dict) -> None:
     assert mapping["controls"]["cc7.1"]["evidenced_by"] == ["scanners/trivy"]
     assert mapping["controls"]["cc8.1"]["satisfied_by"] == ["policies/deny-latest-tag"]
+
+
+def _write(root: Path, rel: str, frontmatter: str) -> None:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"---\n{frontmatter}\n---\n", encoding="utf-8")
+
+
+def test_evidence_comes_from_declarations_not_hand_tags(tmp_path: Path) -> None:
+    _write(tmp_path, "controls/cc6.1.md", "type: SOC 2 Control\ntags: [cc6.1]")
+    _write(tmp_path, "controls/cc7.2.md", "type: SOC 2 Control\ntags: [cc7.2]")
+    _write(tmp_path, "scanners/checkov.md", "type: Scanner\ntags: [cc6.1, cc7.2]")
+    _write(tmp_path, "scanners/semgrep.md", "type: Scanner\ntags: [sast]")
+    _write(tmp_path, "policies/p.md", 'type: Rego Policy\ntags: [cc6.1]\nrule_ids: ["checkov:CKV_1"]')
+    controls = map_findings(load_bundle(tmp_path), [])["controls"]
+    assert controls["cc7.2"] == {
+        "status": "not-assessed", "findings": [], "evidenced_by": [], "satisfied_by": []
+    }
+    assert controls["cc6.1"]["evidenced_by"] == ["scanners/checkov"]
+    assert controls["cc6.1"]["satisfied_by"] == ["policies/p"]
+    assert controls["cc6.1"]["status"] == "no-violations-detected"

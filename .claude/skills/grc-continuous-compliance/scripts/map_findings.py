@@ -21,21 +21,26 @@ def _controls_for(bundle: Bundle, finding: Finding) -> tuple[list[str], str | No
     return (codes, None) if codes else ([], "control-not-in-bundle")
 
 
-def _carriers(bundle: Bundle, types: tuple[str, ...], code: str) -> list[str]:
-    return [c.id for c in bundle.of_type(*types) if code in c.control_tags]
+def _evidence(bundle: Bundle, code: str) -> tuple[list[str], list[str]]:
+    """(evidenced_by, satisfied_by) for a control, derived only from `rule_ids` declarations."""
+    declaring = bundle.declaring(code)
+    tools = {entry.partition(":")[0] for c in declaring for entry in c.rule_ids}
+    scanners = [c.id for c in bundle.of_type(SCANNER_TYPE) if c.code in tools]
+    guardrails = [c.id for c in declaring if c.type in GUARDRAIL_TYPES]
+    return scanners, guardrails
 
 
 def map_findings(bundle: Bundle, findings: list[Finding]) -> dict[str, Any]:
     """Build the mapping document (spec §5.4) from a bundle and findings."""
-    controls: dict[str, dict[str, Any]] = {
-        c.code: {
+    controls: dict[str, dict[str, Any]] = {}
+    for c in bundle.controls():
+        evidenced_by, satisfied_by = _evidence(bundle, c.code)
+        controls[c.code] = {
             "status": "",
             "findings": [],
-            "evidenced_by": _carriers(bundle, (SCANNER_TYPE,), c.code),
-            "satisfied_by": _carriers(bundle, GUARDRAIL_TYPES, c.code),
+            "evidenced_by": evidenced_by,
+            "satisfied_by": satisfied_by,
         }
-        for c in bundle.controls()
-    }
     unmapped: list[dict[str, Any]] = []
     for finding in findings:
         codes, reason = _controls_for(bundle, finding)

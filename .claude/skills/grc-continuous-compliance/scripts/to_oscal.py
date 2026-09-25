@@ -34,11 +34,12 @@ def _finding_key(f: Json) -> str:
 
 
 def component_definition(bundle: Bundle, now: str) -> Json:
-    """Stack components × the in-bundle controls each one links to."""
+    """Stack components × the in-bundle controls each one links to that some concept declares rules for."""
     tsc_uuid = _uuid("resource", TSC_RESOURCE)
+    grounded = [c for c in bundle.controls() if bundle.declaring(c.code)]
     components = []
     for comp in bundle.of_type(COMPONENT_TYPE):
-        controls = [c for cid in comp.links if (c := bundle.concepts.get(cid)) and c in bundle.controls()]
+        controls = [c for cid in comp.links if (c := bundle.concepts.get(cid)) and c in grounded]
         entry: Json = {
             "uuid": _uuid("component", comp.id),
             "type": "software",

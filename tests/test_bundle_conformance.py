@@ -33,8 +33,8 @@ def test_required_metadata(concept) -> None:
 def test_rule_declarations_are_grounded(concept) -> None:
     for entry in concept.rule_ids:
         tool, _, rule = entry.partition(":")
-        assert tool in TOOLS and rule, f"{concept.path}: malformed rule id {entry!r}"
-        assert rule != "*", f"{concept.path}: bare wildcard {entry!r} would map every {tool} finding"
+        assert tool in TOOLS, f"{concept.path}: unknown tool in {entry!r}"
+        assert re.fullmatch(r"[^*?\[\]]+\*?", rule), f"{concept.path}: {entry!r} is not a literal prefix"
     assert len(concept.control_tags) == 1, f"{concept.path}: rule_ids need exactly one control tag"
 
 

@@ -108,8 +108,10 @@ Every concept carries `type`, `title`, `description`, `tags`, and `generated` (`
   - **A concept that declares `rule_ids` carries exactly one control tag.** Otherwise every rule on it would map to every control it names.
   - Detector rules live on the **guardrail** they detect (`Rego Policy`, `Semgrep Rule`). For example, `require-non-root` lists the Conftest, Checkov, and Trivy rules that all detect a root container.
   - `Scanner` concepts declare only rule families that belong to one control (Trivy `CVE-*`/`GHSA-*` → CC7.1).
-  - The rule part may be a shell-style glob (`fnmatch`) for open-ended id families, e.g. `trivy:CVE-*` and `trivy:GHSA-*` on `scanners/trivy.md`, because vulnerability ids cannot be enumerated.
-  - A bare `<tool>:*` is forbidden (it would map every finding from a tool and defeat the grounding rule); the bundle conformance test enforces this.
+  - The rule part is a literal id or a literal prefix with at most one trailing `*` for open-ended id families, i.e. it must match `[^*?\[\]]+\*?` in full: `trivy:CVE-*` and `trivy:GHSA-*` on `scanners/trivy.md` pass, because vulnerability ids cannot be enumerated; `trivy:*`, `trivy:**`, `checkov:?*`, and `x:*-*` fail. The tool part must be non-empty.
+  - A bare `<tool>:*` is therefore forbidden (it would map every finding from a tool and defeat the grounding rule).
+  - **Enforced at parse time:** `load_bundle` raises `BundleError` naming the file when `tags` or `rule_ids` is not a YAML list, a `rule_ids` entry violates the format above, or a concept declaring `rule_ids` has other than exactly one control tag. The bundle conformance test repeats these checks as a second layer.
+  - Hand-added control tags on concepts without `rule_ids` (e.g. a `Scanner` tagged `cc6.6`) are navigation only; they never count as evidence (§5.4, §6).
 - **`# Remediation` body section:** on every concept that declares `rule_ids`; the report templates remediation text from it.
 - **Links:** relative form (§3); headings `# Evidenced by`, `# Satisfies`, `# Applies to` carry the relationship in prose.
 
@@ -133,13 +135,14 @@ class Concept:
 class Bundle:
     concepts: Mapping[str, Concept]
     def controls(self) -> list[Concept]: ...
+    def declaring(self, code: str) -> list[Concept]: ...  # declare rule_ids AND carry `code`, sorted by id
     def by_rule(self, tool: str, rule_id: str) -> list[Concept]: ...
     def section(self, concept: Concept, heading: str) -> str | None: ...
 
 def load_bundle(root: Path) -> Bundle: ...
 ```
 
-Tolerates unknown types, unknown keys, broken links, and missing `index.md` (OKF §11). Raises `BundleError` naming the file for a non-reserved `.md` with unparseable frontmatter or a missing/empty `type`. Skips `index.md` and `log.md`.
+Tolerates unknown types, unknown keys, broken links, and missing `index.md` (OKF §11). Raises `BundleError` naming the file for a non-reserved `.md` with unparseable frontmatter, a missing/empty `type`, or a grounding violation (§5.1). Skips `index.md` and `log.md`.
 
 ### 5.3 Finding (`out/findings.json`)
 
@@ -179,11 +182,16 @@ Join algorithm for each finding:
 3. Keep only tags that name an existing `SOC 2 Control` concept. None survive → unmapped, `reason: "control-not-in-bundle"`.
 4. Attach the finding to each surviving control.
 
+Evidence is derived from declarations, never from hand tags. With `D = bundle.declaring(code)`:
+
+- `satisfied_by` — ids of concepts in `D` whose type is `Rego Policy` or `Semgrep Rule`.
+- `evidenced_by` — ids of `Scanner` concepts whose code (e.g. `trivy`) is the tool part of any `rule_ids` entry in `D`, sorted.
+
 Control status:
 
 - `not-satisfied` — at least one finding attached.
-- `no-violations-detected` — no findings, and at least one `Scanner`, `Rego Policy`, or `Semgrep Rule` concept carries the control's tag. This is evidence, not attestation: automated scans never report a control as `satisfied`.
-- `not-assessed` — no in-bundle scanner or policy carries the control's tag (CC7.2 in v1; runtime monitoring is v2).
+- `no-violations-detected` — no findings, and `evidenced_by` or `satisfied_by` is non-empty. This is evidence, not attestation: automated scans never report a control as `satisfied`.
+- `not-assessed` — otherwise (CC7.2 in v1; runtime monitoring is v2). A control carried only by a hand tag is not assessed.
 
 ## 6. Pipeline
 
@@ -202,6 +210,7 @@ Control status:
   - Conftest's rule id is the Rego package name (`namespace` in its JSON). A scanner exiting non-zero because it found issues is success. A missing binary or a crash fails the run with the scanner named.
 - **`map_findings.py`** — pure join per §5.4; file I/O only at the CLI edge.
 - **`to_oscal.py`** writes `component-definition.json` (components × control implementations) and `assessment-results.json` (findings as observations; per-control findings).
+  - A component lists an implemented-requirement for a control it links to only if `bundle.declaring(code)` is non-empty, so a control nothing declares rules for (CC7.2 in v1) is never claimed as implemented.
   - UUIDs are `uuid5` over stable content ids.
   - Timestamps come from an injectable `--now` for reproducible tests.
   - Only controls with violations get an OSCAL `finding` (state `not-satisfied`). Controls with no violations detected, and controls not assessed, are listed in the result `remarks`, never as `satisfied`.

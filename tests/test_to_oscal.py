@@ -94,3 +94,21 @@ def test_per_resource_findings_keep_separate_observations(bundle: Bundle) -> Non
     assert len(result["observations"]) == 2
     (finding,) = result["findings"]
     assert len({o["observation-uuid"] for o in finding["related-observations"]}) == 2
+
+
+def test_component_claims_only_controls_with_declared_rules(tmp_path: Path) -> None:
+    files = {
+        "controls/cc6.1.md": "type: SOC 2 Control\ntags: [cc6.1]",
+        "controls/cc7.2.md": "type: SOC 2 Control\ntags: [cc7.2]",
+        "scanners/checkov.md": "type: Scanner\ntags: [cc7.2]",
+        "policies/p.md": 'type: Rego Policy\ntags: [cc6.1]\nrule_ids: ["checkov:CKV_1"]',
+    }
+    for rel, fm in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(f"---\n{fm}\n---\n", encoding="utf-8")
+    (tmp_path / "app.md").write_text(
+        "---\ntype: Stack Component\n---\n[a](controls/cc6.1.md) [b](controls/cc7.2.md)\n", encoding="utf-8"
+    )
+    (comp,) = component_definition(load_bundle(tmp_path), NOW)["component-definition"]["components"]
+    reqs = comp["control-implementations"][0]["implemented-requirements"]
+    assert [r["control-id"] for r in reqs] == ["cc6.1"]
