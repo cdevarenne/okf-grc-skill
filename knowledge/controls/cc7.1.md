@@ -20,7 +20,6 @@ they can be exploited: source, third-party dependencies, and container images.
 # Evidenced by
 
 - [Trivy](../scanners/trivy.md) — dependency and image CVEs
-- [Semgrep](../scanners/semgrep.md) — static analysis
 
 # Applies to
 
