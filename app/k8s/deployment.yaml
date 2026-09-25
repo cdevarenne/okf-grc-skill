@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: widgets-api
+  labels:
+    app: widgets-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: widgets-api
+  template:
+    metadata:
+      labels:
+        app: widgets-api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/widgets-api:latest
+          ports:
+            - containerPort: 8000
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
