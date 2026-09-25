@@ -82,3 +82,9 @@ def test_links_are_relative() -> None:
     """The pinned OKF visualizer ignores bundle-absolute links, so the bundle uses relative ones."""
     for concept in BUNDLE.concepts.values():
         assert "](/" not in concept.body, f"{concept.path}: use a relative link"
+
+@pytest.mark.parametrize("concept", BUNDLE.concepts.values(), ids=lambda c: c.id)
+def test_every_concept_is_human_verified(concept) -> None:
+    verified = concept.frontmatter.get("verified")
+    entries = verified if isinstance(verified, list) else [verified] if verified else []
+    assert any(str(e.get("by", "")).startswith("human:") for e in entries), f"{concept.path}: not human-verified"

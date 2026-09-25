@@ -6,6 +6,9 @@ tags: [soc2, cc6.6, nist-sc-7, nist-sc-8]
 generated:
   by: claude-code/claude-opus-5-5
   at: "2026-09-25T00:00:00+00:00"
+verified:
+  - by: "human:cdevarenne"
+    at: "2026-09-25T14:50:00-07:00"
 ---
 # Intent
 
