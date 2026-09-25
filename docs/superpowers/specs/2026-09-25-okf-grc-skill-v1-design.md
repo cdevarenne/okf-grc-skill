@@ -35,17 +35,19 @@ A portable OKF knowledge bundle grounds an agent skill that scans a clean-room s
 |---|---|---|
 | Python | `>=3.14` | uv-managed project |
 | OKF spec | v0.2, `GoogleCloudPlatform/open-knowledge-format` @ `ad30107c31c0` | No tags/releases exist; pin by commit. The `knowledge-catalog/okf` copy is frozen and must not be used. |
-| OKF visualizer | `reference-agent` package from the same commit | Run isolated: `uvx --from "reference-agent @ git+https://github.com/GoogleCloudPlatform/open-knowledge-format@<sha>" reference-agent visualize --bundle knowledge` (exact invocation verified in Phase 6) |
-| OSCAL | 1.1.x; exact version pinned in Phase 0 | JSON schemas vendored into `tests/fixtures/oscal/` |
-| Semgrep, Checkov | pinned in `tools.lock`, installed via `uv tool install` | |
-| Trivy, Conftest | pinned in `tools.lock`, installed via Homebrew | `make bootstrap` checks installed versions and fails on mismatch |
+| OKF visualizer | `reference-agent` package from the same commit | Run isolated: `uvx --python 3.14 --from "reference-agent @ git+…@<OKF_COMMIT>" reference-agent visualize --bundle knowledge --out out/knowledge-viz.html` |
+| OSCAL | 1.2.3 (latest release) | JSON schemas vendored into `tests/fixtures/oscal/` |
+| Semgrep, Checkov | 1.178.0, 3.3.19; `uv tool install` into repo-local `.tools/` | Checkov runs on Python 3.12, its highest supported version |
+| Trivy, Conftest | 0.74.0, 0.70.1; checksum-verified release binaries into `.tools/bin/` | Homebrew cannot pin versions, so it is not used |
+
+All pins live in `tools.lock`. `make bootstrap` installs them repo-locally and fails on any version mismatch.
 
 OKF v0.2 changes relative to the v0.1-era source docs, adopted here:
 
 - `index.md` files carry **no frontmatter**, except the bundle-root `index.md`, which declares `okf_version: "0.2"`.
 - `timestamp` is replaced by `generated: {by, at}` (ISO 8601 with offset).
 - `verified: [{by: "human:cdevarenne", at}]` records human review.
-- Bundle-absolute links (`/controls/cc7.1.md`) are the recommended link form.
+- OKF recommends bundle-absolute links (`/controls/cc7.1.md`), but the pinned visualizer draws no edge for them. This bundle therefore uses **relative links**, which both the spec and the visualizer accept.
 
 ## 4. Repository layout
 
@@ -55,7 +57,8 @@ okf-grc-skill/
 ├── LICENSE                    # MIT
 ├── Makefile                   # bootstrap / scan / render / test / clean
 ├── pyproject.toml             # runtime: pyyaml; dev: pytest, jsonschema
-├── tools.lock                 # pinned scanner versions
+├── tools.lock                 # all pinned external versions
+├── scripts/bootstrap.sh       # installs pinned scanners into .tools/ (git-ignored)
 ├── app/                       # clean-room scan target (never executed in v1)
 │   ├── SEEDED.yaml            # machine-readable seeded-issue ledger
 │   ├── manage.py
@@ -92,19 +95,23 @@ These are fixed before Phase 4 and are the interface for any parallel agent work
 | `SOC 2 Control` | `controls/cc6.1.md`, `cc6.6.md`, `cc7.1.md`, `cc7.2.md`, `cc8.1.md` |
 | `Stack Component` | `stack/django-api.md`, `container.md`, `k8s.md`, `terraform.md` |
 | `Rego Policy` | `policies/deny-latest-tag.md`, `require-non-root.md`, `no-public-bucket.md` |
+| `Semgrep Rule` | `policies/drf-authenticated-writes.md` |
 | `Scanner` | `scanners/semgrep.md`, `trivy.md`, `checkov.md`, `conftest.md` |
 | `Reference` | `oscal/component-definition.md` |
 
 Plus `index.md` per directory (no frontmatter except root) and root `log.md`.
 
-Every concept carries `type`, `title`, `description`, `tags`, and `generated`. After human review it also carries `verified`.
+Every concept carries `type`, `title`, `description`, `tags`, and `generated` (`by: claude-code/claude-opus-5-5` for agent-drafted files). After human review it also carries `verified: [{by: "human:cdevarenne", at}]`.
 
 - **Control tags:** the control's own id (`cc7.1`) plus NIST tags (`nist-ra-5`, `nist-si-2`).
-- **Extension key `rule_ids`:** on `Rego Policy` and `Scanner` concepts, a list of `"<tool>:<rule_id>"` strings — exactly the scanner rules this concept declares coverage for. The concept's control tags (`ccN.N`) state which controls those rules satisfy/evidence.
+- **Extension key `rule_ids`:** a list of `"<tool>:<rule_id>"` strings, the scanner rules this concept declares coverage for.
+  - **A concept that declares `rule_ids` carries exactly one control tag.** Otherwise every rule on it would map to every control it names.
+  - Detector rules live on the **guardrail** they detect (`Rego Policy`, `Semgrep Rule`). For example, `require-non-root` lists the Conftest, Checkov, and Trivy rules that all detect a root container.
+  - `Scanner` concepts declare only rule families that belong to one control (Trivy `CVE-*`/`GHSA-*` → CC7.1).
   - The rule part may be a shell-style glob (`fnmatch`) for open-ended id families, e.g. `trivy:CVE-*` and `trivy:GHSA-*` on `scanners/trivy.md`, because vulnerability ids cannot be enumerated.
   - A bare `<tool>:*` is forbidden (it would map every finding from a tool and defeat the grounding rule); the bundle conformance test enforces this.
-- **`# Remediation` body section:** on `Rego Policy` and `Scanner` concepts; the report templates remediation text from it.
-- **Links:** bundle-absolute form; headings `# Evidenced by`, `# Satisfies`, `# Applies to` carry the relationship in prose.
+- **`# Remediation` body section:** on every concept that declares `rule_ids`; the report templates remediation text from it.
+- **Links:** relative form (§3); headings `# Evidenced by`, `# Satisfies`, `# Applies to` carry the relationship in prose.
 
 ### 5.2 `okf_lib`
 
@@ -142,7 +149,7 @@ Tolerates unknown types, unknown keys, broken links, and missing `index.md` (OKF
 ```
 
 - `tool` ∈ `semgrep | trivy | checkov | conftest`.
-- `severity` ∈ `critical | high | medium | low | info` (normalized per tool).
+- `severity` ∈ `critical | high | medium | low | info | unknown` (normalized per tool). Checkov reports no severity without a vendor API key, so its findings are `unknown` rather than an invented level. Conftest deny rules are blocking, so they are `high`.
 - `target` is repo-relative.
 - `tags` holds tool-native tags only; the join key is `(tool, rule_id)`.
 - Exact duplicates on `(tool, rule_id, target)` are collapsed. Cross-tool duplicates are kept as corroborating evidence.
@@ -175,7 +182,7 @@ Join algorithm for each finding:
 Control status:
 
 - `not-satisfied` — at least one finding attached.
-- `satisfied` — no findings, and at least one `Scanner` or `Rego Policy` concept carries the control's tag.
+- `satisfied` — no findings, and at least one `Scanner`, `Rego Policy`, or `Semgrep Rule` concept carries the control's tag.
 - `not-assessed` — no in-bundle scanner or policy carries the control's tag (CC7.2 in v1; runtime monitoring is v2).
 
 ## 6. Pipeline
@@ -186,14 +193,18 @@ Control status:
   - Semgrep with `policies/semgrep/`, `--metrics=off`;
   - `trivy config` and `trivy fs` on `app/`;
   - Checkov on Terraform, K8s, and the Dockerfile;
-  - Conftest with `policies/rego/` on the K8s manifests and Terraform (input format decided in Phase 3 by testing Conftest's HCL2 parser).
+  - Conftest with `policies/rego/` and `--all-namespaces` on the K8s manifests and the `.tf` files. Conftest parses HCL2 directly; each block parses to a list.
 
-  One normalizer function per tool. A scanner exiting non-zero because it found issues is success. A missing binary or a crash fails the run with the scanner named.
+  One normalizer function per tool. Observed tool behavior the normalizers rely on:
+  - Semgrep prefixes rule ids with the config path (`policies.semgrep.drf-allowany`); the normalizer keeps the last segment.
+  - Trivy 0.74 rule ids are dashed (`DS-0002`, `KSV-0013`); targets are relative to the scanned directory.
+  - Checkov runs with `cwd` = the target: its Kubernetes framework reports paths relative to the working directory, not `-d`.
+  - Conftest's rule id is the Rego package name (`namespace` in its JSON). A scanner exiting non-zero because it found issues is success. A missing binary or a crash fails the run with the scanner named.
 - **`map_findings.py`** — pure join per §5.4; file I/O only at the CLI edge.
 - **`to_oscal.py`** writes `component-definition.json` (components × control implementations) and `assessment-results.json` (findings as observations; per-control findings).
   - UUIDs are `uuid5` over stable content ids.
   - Timestamps come from an injectable `--now` for reproducible tests.
-  - Unmapped findings become observations with no related control plus a finding titled "Coverage gap"; they are never attached to a control.
+  - Unmapped findings become observations plus an open **risk** titled "Coverage gap: …". They are never OSCAL `findings`, because an OSCAL finding must target a control and targeting one would invent a mapping.
   - Placeholder values for required fields (e.g. `import-ap`) are listed in `docs/oscal-subset.md`.
 - **`render_report.py`** writes `out/report.md`:
   - per control: status, evidence (linked concepts), open findings, remediation paragraph from `# Remediation` sections;
@@ -214,7 +225,7 @@ Makefile targets:
 
 ## 7. Seeded issues
 
-Recorded in `app/SEEDED.yaml`. Exact `rule_id`s are filled in from real scanner runs in Phase 1, not guessed.
+Recorded in `app/SEEDED.yaml`, with the rule ids observed detecting each issue in a prototype run of the pinned scanners (2026-09-25). The full scan also surfaces about 40 other misconfigurations the bundle does not declare. They are reported as coverage gaps too, which is the grounding rule working as intended.
 
 | Id | Where | Issue | Expected outcome |
 |---|---|---|---|
@@ -234,7 +245,7 @@ The bundle must deliberately not declare S2's rule ids, so the gap is produced b
   - `okf_lib`: fixture mini-bundles — missing `type` rejected; unknown type/key tolerated; broken link tolerated and recorded; `index.md`/`log.md` skipped.
   - `map_findings`: the grounding gate. Hand-written findings: three mapped (one via a `CVE-*` glob), one `no-rule-match`, one `control-not-in-bundle` (fixture policy tagged `cc9.9`); status derivation for all three states. These fixtures stay in the repo permanently.
   - `run_scan`: normalizers tested against captured real scanner JSON in `tests/fixtures/scanner_output/`, captured during Phase 4.
-  - `to_oscal`: schema validation against the vendored OSCAL schemas; determinism (same input + `--now` → identical output); coverage gaps never carry a related control.
+  - `to_oscal`: schema validation against the vendored OSCAL schemas (the schemas' `\p{L}`/`\p{N}` regex classes are rewritten to Python equivalents at load time, since Python's `re` rejects them); determinism (same input + `--now` → identical output); coverage gaps never carry a related control.
   - `render_report`: golden-file test from a fixture mapping.
 - **Bundle conformance test** on the real `knowledge/`:
   - OKF v0.2 §11;
@@ -251,7 +262,7 @@ The bundle must deliberately not declare S2's rule ids, so the gap is produced b
 
 | Phase | Deliverable | Verified by |
 |---|---|---|
-| 0 | Repo scaffold, pins (`tools.lock`, OKF sha, OSCAL version), README, Makefile skeleton, `pyproject.toml`, `.gitignore` | `make bootstrap` passes version checks; `make test` runs (empty suite green) |
+| 0 | Repo scaffold, `tools.lock`, `scripts/bootstrap.sh`, README, Makefile, `pyproject.toml`, `.gitignore`, LICENSE | `make bootstrap` passes version checks; pin-format test green |
 | 1 | Sample app, manifests, Terraform, `SEEDED.yaml` with real rule ids | each seeded issue observed in a manual scanner run; ids recorded |
 | 2 | OKF bundle (~20 concepts + indexes + log) | bundle conformance test green after author review adds `verified` |
 | 3 | Three Rego policies + tests; Semgrep ruleset | `conftest verify`; each policy fires on its seeded file |
