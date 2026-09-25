@@ -84,3 +84,13 @@ def test_validator_rejects_bad_token(bundle: Bundle) -> None:
     reqs[0]["control-id"] = "9 not a token"
     with pytest.raises(ValidationError):
         validate(doc, "oscal_component_schema.json")
+
+
+def test_per_resource_findings_keep_separate_observations(bundle: Bundle) -> None:
+    base = {"tool": "conftest", "rule_id": "require_non_root", "severity": "high",
+            "target": "app/k8s/deployment.yaml", "tags": []}
+    findings = [{**base, "message": "container a"}, {**base, "message": "container b"}]
+    (result,) = assessment_results(bundle, map_findings(bundle, findings), NOW)["assessment-results"]["results"]
+    assert len(result["observations"]) == 2
+    (finding,) = result["findings"]
+    assert len({o["observation-uuid"] for o in finding["related-observations"]}) == 2

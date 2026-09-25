@@ -30,7 +30,7 @@ def _metadata(title: str, now: str) -> Json:
 
 
 def _finding_key(f: Json) -> str:
-    return f"{f['tool']}:{f['rule_id']}:{f['target']}"
+    return f"{f['tool']}:{f['rule_id']}:{f['target']}:{f['message']}"
 
 
 def component_definition(bundle: Bundle, now: str) -> Json:
