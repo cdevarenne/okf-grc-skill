@@ -40,7 +40,8 @@ def _control_section(bundle: Bundle, code: str, entry: Json) -> list[str]:
     lines += [f"**Evidence:** {', '.join(evidence) if evidence else 'none in bundle'}", ""]
     if entry["findings"]:
         lines += ["**Open findings:**", "", *map(_finding_line, entry["findings"]), ""]
-        lines += [f"**Remediation:** {_remediation(bundle, code, entry['findings'])}", ""]
+        if remediation := _remediation(bundle, code, entry["findings"]):
+            lines += [f"**Remediation:** {remediation}", ""]
     return lines
 
 

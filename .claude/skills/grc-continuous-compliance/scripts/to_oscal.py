@@ -155,7 +155,7 @@ def assessment_results(bundle: Bundle, mapping: Json, now: str) -> Json:
         result["remarks"] = remarks
     return {
         "assessment-results": {
-            "uuid": _uuid("assessment-results"),
+            "uuid": _uuid("assessment-results", now),
             "metadata": _metadata("okf-grc-skill automated assessment", now),
             "import-ap": {"href": NO_AP_HREF, "remarks": "Assessment plan not modeled in v1; see docs/oscal-subset.md."},
             "results": [result],

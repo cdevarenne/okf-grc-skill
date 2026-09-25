@@ -112,3 +112,11 @@ def test_component_claims_only_controls_with_declared_rules(tmp_path: Path) -> N
     (comp,) = component_definition(load_bundle(tmp_path), NOW)["component-definition"]["components"]
     reqs = comp["control-implementations"][0]["implemented-requirements"]
     assert [r["control-id"] for r in reqs] == ["cc6.1"]
+
+
+def test_assessment_results_uuid_changes_per_run(bundle: Bundle, mapping: dict) -> None:
+    def doc_uuid(now: str) -> str:
+        return assessment_results(bundle, mapping, now)["assessment-results"]["uuid"]
+
+    assert doc_uuid(NOW) == doc_uuid(NOW)
+    assert doc_uuid(NOW) != doc_uuid("2026-09-26T12:00:00+00:00")
