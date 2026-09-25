@@ -7,7 +7,7 @@ export PATH := $(TOOLBIN):$(PATH)
 export TRIVY_CACHE_DIR := $(CURDIR)/.tools/trivy-cache
 OKF := reference-agent @ git+https://github.com/GoogleCloudPlatform/open-knowledge-format@$(OKF_COMMIT)
 
-.PHONY: bootstrap scan render test test-integration clean
+.PHONY: bootstrap scan render test test-integration examples clean
 
 bootstrap:
 	uv sync
@@ -30,6 +30,9 @@ test:
 
 test-integration:
 	uv run pytest -m integration
+
+examples: scan
+	cp out/report.md examples/report.md
 
 clean:
 	rm -rf out
