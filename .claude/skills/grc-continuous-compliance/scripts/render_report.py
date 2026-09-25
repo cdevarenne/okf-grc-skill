@@ -12,6 +12,29 @@ from okf_lib import Bundle, load_bundle
 
 Json = dict[str, Any]
 
+SEVERITIES = ("critical", "high", "medium", "low")  # known severities, ordered high-to-low
+UNCLASSIFIED = "unclassified"  # a finding the scanner did not severity-rank
+
+
+def _bucket(severity: str) -> str:
+    """Map a scanner severity to a known bucket, or 'unclassified'."""
+    s = (severity or "").strip().lower()
+    return s if s in SEVERITIES else UNCLASSIFIED
+
+
+def _counts(findings: list[Json]) -> dict[str, int]:
+    """Count findings per severity bucket."""
+    counts = dict.fromkeys((*SEVERITIES, UNCLASSIFIED), 0)
+    for f in findings:
+        counts[_bucket(f["severity"])] += 1
+    return counts
+
+
+def _breakdown(counts: dict[str, int]) -> str:
+    """One-line severity breakdown, e.g. '3 critical, 16 high'. Empty buckets are omitted."""
+    parts = [f"{counts[s]} {s}" for s in (*SEVERITIES, UNCLASSIFIED) if counts[s]]
+    return ", ".join(parts) if parts else "no findings"
+
 
 def _link(bundle: Bundle, concept_id: str) -> str:
     concept = bundle.concepts[concept_id]
@@ -37,6 +60,8 @@ def _control_section(bundle: Bundle, code: str, entry: Json) -> list[str]:
     control = bundle.control(code)
     evidence = [_link(bundle, cid) for cid in entry["evidenced_by"] + entry["satisfied_by"]]
     lines = [f"### {control.title if control else code}", "", f"**Status:** {entry['status']}", ""]
+    if entry["findings"]:
+        lines += [f"**Findings:** {_breakdown(_counts(entry['findings']))}", ""]
     lines += [f"**Evidence:** {', '.join(evidence) if evidence else 'none in bundle'}", ""]
     if entry["findings"]:
         lines += ["**Open findings:**", "", *map(_finding_line, entry["findings"]), ""]
@@ -45,8 +70,38 @@ def _control_section(bundle: Bundle, code: str, entry: Json) -> list[str]:
     return lines
 
 
+def _risk_posture(controls: list[tuple[str, Json]], unmapped: list[Json]) -> list[str]:
+    """A one-glance summary: open findings by severity, control status counts, and coverage gaps."""
+    total = dict.fromkeys((*SEVERITIES, UNCLASSIFIED), 0)
+    open_findings = not_satisfied = not_assessed = clean = 0
+    for _code, entry in controls:
+        status = entry["status"]
+        if status == "not-assessed":
+            not_assessed += 1
+        elif status == "not-satisfied":
+            not_satisfied += 1
+        else:
+            clean += 1
+        for f in entry["findings"]:
+            total[_bucket(f["severity"])] += 1
+            open_findings += 1
+    findings_word = "finding" if open_findings == 1 else "findings"
+    controls_word = "control" if len(controls) == 1 else "controls"
+    clean_clause = "control shows" if clean == 1 else "controls show"
+    gaps_word = "coverage gap" if len(unmapped) == 1 else "coverage gaps"
+    return [
+        "## Risk posture",
+        "",
+        f"{open_findings} open {findings_word} across {not_satisfied} of {len(controls)} {controls_word}: "
+        f"{_breakdown(total)}.",
+        f"{clean} {clean_clause} no violations. {not_assessed} not assessed. "
+        f"{len(unmapped)} {gaps_word} to triage.",
+        "",
+    ]
+
+
 def render_report(bundle: Bundle, mapping: Json, now: str) -> str:
-    """Markdown report: summary, per-control detail, coverage gaps, not-assessed controls."""
+    """Markdown report: risk posture, summary, per-control detail, coverage gaps, not-assessed controls."""
     controls = sorted(mapping["controls"].items())
     lines = [
         "# Compliance Scan Report",
@@ -56,13 +111,18 @@ def render_report(bundle: Bundle, mapping: Json, now: str) -> str:
         "`no-violations-detected` means automated checks found nothing for that control;",
         "it is evidence, not a control attestation.",
         "",
+        *_risk_posture(controls, mapping["unmapped"]),
         "## Summary",
         "",
-        "| Control | Status | Open findings |",
-        "|---|---|---|",
+        "| Control | Status | Critical | High | Medium | Low | Uncl. | Total |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for code, entry in controls:
-        lines.append(f"| {code} | {entry['status']} | {len(entry['findings'])} |")
+        c = _counts(entry["findings"])
+        lines.append(
+            f"| {code} | {entry['status']} | {c['critical']} | {c['high']} | "
+            f"{c['medium']} | {c['low']} | {c['unclassified']} | {len(entry['findings'])} |"
+        )
     lines += ["", "## Controls", ""]
     for code, entry in controls:
         if entry["status"] != "not-assessed":

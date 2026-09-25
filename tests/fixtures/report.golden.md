@@ -5,20 +5,27 @@ controls declared in the OKF knowledge bundle; nothing is mapped without a decla
 `no-violations-detected` means automated checks found nothing for that control;
 it is evidence, not a control attestation.
 
+## Risk posture
+
+3 open findings across 2 of 4 controls: 1 critical, 1 high, 1 medium.
+1 control shows no violations. 1 not assessed. 2 coverage gaps to triage.
+
 ## Summary
 
-| Control | Status | Open findings |
-|---|---|---|
-| cc6.1 | not-satisfied | 2 |
-| cc7.1 | not-satisfied | 1 |
-| cc7.2 | not-assessed | 0 |
-| cc8.1 | no-violations-detected | 0 |
+| Control | Status | Critical | High | Medium | Low | Uncl. | Total |
+|---|---|---|---|---|---|---|---|
+| cc6.1 | not-satisfied | 0 | 1 | 1 | 0 | 0 | 2 |
+| cc7.1 | not-satisfied | 1 | 0 | 0 | 0 | 0 | 1 |
+| cc7.2 | not-assessed | 0 | 0 | 0 | 0 | 0 | 0 |
+| cc8.1 | no-violations-detected | 0 | 0 | 0 | 0 | 0 | 0 |
 
 ## Controls
 
 ### CC6.1 — Logical Access
 
 **Status:** not-satisfied
+
+**Findings:** 1 high, 1 medium
 
 **Evidence:** [Require non-root](../knowledge/policies/require-non-root.md)
 
@@ -32,6 +39,8 @@ it is evidence, not a control attestation.
 ### CC7.1 — Vulnerability Detection
 
 **Status:** not-satisfied
+
+**Findings:** 1 critical
 
 **Evidence:** [Trivy](../knowledge/scanners/trivy.md)
 

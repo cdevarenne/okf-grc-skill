@@ -1,25 +1,32 @@
 # Compliance Scan Report
 
-Generated 2026-09-25T22:37:20+00:00. Every status below is derived from scanner findings joined to
+Generated 2026-09-25T23:12:54+00:00. Every status below is derived from scanner findings joined to
 controls declared in the OKF knowledge bundle; nothing is mapped without a declaration.
 `no-violations-detected` means automated checks found nothing for that control;
 it is evidence, not a control attestation.
 
+## Risk posture
+
+65 open findings across 4 of 5 controls: 3 critical, 22 high, 23 medium, 12 low, 5 unclassified.
+0 controls show no violations. 1 not assessed. 41 coverage gaps to triage.
+
 ## Summary
 
-| Control | Status | Open findings |
-|---|---|---|
-| cc6.1 | not-satisfied | 7 |
-| cc6.6 | not-satisfied | 4 |
-| cc7.1 | not-satisfied | 51 |
-| cc7.2 | not-assessed | 0 |
-| cc8.1 | not-satisfied | 3 |
+| Control | Status | Critical | High | Medium | Low | Uncl. | Total |
+|---|---|---|---|---|---|---|---|
+| cc6.1 | not-satisfied | 0 | 3 | 1 | 1 | 2 | 7 |
+| cc6.6 | not-satisfied | 0 | 2 | 0 | 0 | 2 | 4 |
+| cc7.1 | not-satisfied | 3 | 16 | 21 | 11 | 0 | 51 |
+| cc7.2 | not-assessed | 0 | 0 | 0 | 0 | 0 | 0 |
+| cc8.1 | not-satisfied | 0 | 1 | 1 | 0 | 1 | 3 |
 
 ## Controls
 
 ### CC6.1 — Logical Access
 
 **Status:** not-satisfied
+
+**Findings:** 3 high, 1 medium, 1 low, 2 unclassified
 
 **Evidence:** [Checkov](../knowledge/scanners/checkov.md), [Conftest](../knowledge/scanners/conftest.md), [Semgrep](../knowledge/scanners/semgrep.md), [Trivy](../knowledge/scanners/trivy.md), [DRF writes require authentication](../knowledge/policies/drf-authenticated-writes.md), [Require non-root containers](../knowledge/policies/require-non-root.md)
 
@@ -41,6 +48,8 @@ it is evidence, not a control attestation.
 
 **Status:** not-satisfied
 
+**Findings:** 2 high, 2 unclassified
+
 **Evidence:** [Checkov](../knowledge/scanners/checkov.md), [Conftest](../knowledge/scanners/conftest.md), [Trivy](../knowledge/scanners/trivy.md), [No public buckets](../knowledge/policies/no-public-bucket.md)
 
 **Open findings:**
@@ -56,6 +65,8 @@ accounts only, and enforce public access prevention on the bucket.
 ### CC7.1 — Vulnerability Detection
 
 **Status:** not-satisfied
+
+**Findings:** 3 critical, 16 high, 21 medium, 11 low
 
 **Evidence:** [Trivy](../knowledge/scanners/trivy.md)
 
@@ -119,6 +130,8 @@ advisories, then re-scan.
 ### CC8.1 — Change Management
 
 **Status:** not-satisfied
+
+**Findings:** 1 high, 1 medium, 1 unclassified
 
 **Evidence:** [Checkov](../knowledge/scanners/checkov.md), [Conftest](../knowledge/scanners/conftest.md), [Trivy](../knowledge/scanners/trivy.md), [Deny :latest image tag](../knowledge/policies/deny-latest-tag.md)
 

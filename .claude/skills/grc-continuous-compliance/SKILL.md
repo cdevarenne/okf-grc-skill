@@ -35,8 +35,9 @@ description: >
    user: controls not satisfied, the highest-severity findings, coverage gaps,
    and controls not assessed.
 4. **Enrich (optional, on request).** You may rewrite prose in `out/report.md`
-   to be clearer for an auditor. You must not change any status, add or remove
-   a finding, or move a finding between a control and the coverage-gap list.
+   to be clearer for an auditor. You must not change any status, severity
+   count, or risk-posture figure, add or remove a finding, or move a finding
+   between a control and the coverage-gap list.
 5. **Propose, don't patch the bundle.** If a coverage gap looks like it belongs
    to an existing control, propose a `rule_ids` addition to the relevant
    guardrail concept for human review. Do not edit `knowledge/` unasked.
