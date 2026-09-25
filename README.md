@@ -28,6 +28,25 @@ A finding with no declaration is reported as a **coverage gap**, never mapped by
 guesswork. The scan surfaces dozens of such gaps; each one is a rule the bundle
 has not yet claimed for any control.
 
+## Screenshots
+
+![OKF knowledge graph](docs/screenshots/knowledge-graph.png)
+
+![Compliance scan report](docs/screenshots/report.png)
+
+## Limits (v1)
+
+- **Evidence, not attestation.** A control with no violations is reported as
+  `no-violations-detected`, never `satisfied`. Automated scans evidence a SOC 2
+  criterion; they do not attest it.
+- **No suppression workflow.** Scanner-native inline skips (e.g. `checkov:skip`)
+  are honored by the scanners themselves; there is no triage layer for false
+  positives, so they appear as findings or coverage gaps.
+- **Static manifests only.** Helm or Kustomize output is not rendered before
+  scanning.
+- **Sized for the sample app.** Scanner JSON is read in memory, and the
+  scanner set is fixed in `run_scan.py`.
+
 ## Pins
 
 All external versions are pinned in [`tools.lock`](tools.lock): Semgrep, Checkov,
