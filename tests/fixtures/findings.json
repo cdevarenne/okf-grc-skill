@@ -1,0 +1,7 @@
+[
+  {"tool": "conftest", "rule_id": "require_non_root", "severity": "high", "target": "app/k8s/deployment.yaml", "message": "container runs as root", "tags": []},
+  {"tool": "checkov", "rule_id": "CKV_TEST_1", "severity": "medium", "target": "app/k8s/deployment.yaml", "message": "runAsNonRoot not set", "tags": []},
+  {"tool": "trivy", "rule_id": "CVE-2024-0001", "severity": "critical", "target": "app/requirements.txt", "message": "example-pkg 1.0 vulnerable", "tags": []},
+  {"tool": "checkov", "rule_id": "CKV_TEST_99", "severity": "low", "target": "app/Dockerfile", "message": "no HEALTHCHECK", "tags": []},
+  {"tool": "conftest", "rule_id": "orphan_rule", "severity": "medium", "target": "app/infra/main.tf", "message": "orphan", "tags": []}
+]
