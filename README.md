@@ -9,7 +9,10 @@ auditor-facing report.
 
 > **`app/` is intentionally vulnerable.** It exists only as a scan target, with
 > seeded issues listed in [`app/SEEDED.yaml`](app/SEEDED.yaml). Do not deploy it.
-> **Clean-room.** Everything here is generic and self-contained: the sample app, the Rego policies, and the OSCAL output. No proprietary or production data, configuration, or control text is included.
+
+> **Clean-room.** Everything here is generic and self-contained: the sample app, 
+> the Rego policies, and the OSCAL output. No proprietary or production data, configuration, 
+> or control text is included.
 
 ## The one-command loop
 
