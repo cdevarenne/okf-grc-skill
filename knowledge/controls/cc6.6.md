@@ -4,11 +4,11 @@ title: CC6.6 — System Boundary Protection
 description: Resources are protected from access originating outside the system boundary.
 tags: [soc2, cc6.6, nist-sc-7, nist-sc-8]
 generated:
-  by: claude-code/claude-opus-5-5
-  at: "2026-09-25T00:00:00+00:00"
+  by: human:cdevarenne
+  at: "2026-09-25T15:29:00-07:00"
 verified:
   - by: "human:cdevarenne"
-    at: "2026-09-25T14:50:00-07:00"
+    at: "2026-09-25T15:31:00-07:00"
 ---
 # Intent
 
@@ -27,6 +27,8 @@ and data crossing the boundary is protected in transit.
 # Evidenced by
 
 - [Checkov](../scanners/checkov.md) — IaC boundary checks
+- [Conftest](../scanners/conftest.md) — the no-public-bucket policy gate
+- [Trivy](../scanners/trivy.md) — public-bucket configuration check
 
 # Applies to
 

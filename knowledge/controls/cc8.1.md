@@ -4,11 +4,11 @@ title: CC8.1 — Change Management
 description: Changes to infrastructure and software are controlled, reproducible, and reviewed.
 tags: [soc2, cc8.1, nist-cm-2, nist-cm-3]
 generated:
-  by: claude-code/claude-opus-5-5
-  at: "2026-09-25T00:00:00+00:00"
+  by: "human:cdevarenne"
+  at: "2026-09-25T15:30:00-07:00"
 verified:
   - by: "human:cdevarenne"
-    at: "2026-09-25T14:50:00-07:00"
+    at: "2026-09-25T15:31:00-07:00"
 ---
 # Intent
 
@@ -28,6 +28,7 @@ changes pass automated policy gates before release.
 
 - [Conftest](../scanners/conftest.md) — policy gate on manifests
 - [Checkov](../scanners/checkov.md) — IaC policy scan
+- [Trivy](../scanners/trivy.md) — `:latest` image-tag check
 
 # Applies to
 

@@ -34,7 +34,7 @@ has not yet claimed for any control.
 
 ![OKF knowledge graph](docs/screenshots/knowledge-graph.png)
 
-![Compliance scan report](docs/screenshots/report.png)
+![Compliance scan report — excerpt: summary and first control](docs/screenshots/report.png)
 
 ## Limits (v1)
 

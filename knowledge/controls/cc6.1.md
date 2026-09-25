@@ -4,11 +4,11 @@ title: CC6.1 — Logical Access
 description: Access to systems and data is restricted to authorized, least-privileged identities.
 tags: [soc2, cc6.1, nist-ac-2, nist-ac-3, nist-ac-6]
 generated:
-  by: claude-code/claude-opus-5-5
-  at: "2026-09-25T00:00:00+00:00"
+  by: human:cdevarenne
+  at: "2026-09-25T15:28:00-07:00"
 verified:
   - by: "human:cdevarenne"
-    at: "2026-09-25T14:50:00-07:00"
+    at: "2026-09-25T15:31:00-07:00"
 ---
 # Intent
 
@@ -29,6 +29,9 @@ and workloads run with the least privilege they need.
 # Evidenced by
 
 - [Semgrep](../scanners/semgrep.md) — authorization rules in application code
+- [Checkov](../scanners/checkov.md) — root-container checks on the Dockerfile and manifests
+- [Conftest](../scanners/conftest.md) — the require-non-root policy gate
+- [Trivy](../scanners/trivy.md) — root-user configuration checks
 
 # Applies to
 
