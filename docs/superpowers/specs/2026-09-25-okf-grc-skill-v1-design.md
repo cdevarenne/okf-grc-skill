@@ -108,6 +108,7 @@ Every concept carries `type`, `title`, `description`, `tags`, and `generated` (`
   - **A concept that declares `rule_ids` carries exactly one control tag.** Otherwise every rule on it would map to every control it names.
   - Detector rules live on the **guardrail** they detect (`Rego Policy`, `Semgrep Rule`). For example, `require-non-root` lists the Conftest, Checkov, and Trivy rules that all detect a root container.
   - `Scanner` concepts declare only rule families that belong to one control (Trivy `CVE-*`/`GHSA-*` → CC7.1).
+  - **Scanner identity convention:** a `Scanner` concept's file stem is the tool name used in `rule_ids` (`scanners/trivy.md` ↔ `trivy:`).
   - The rule part is a literal id or a literal prefix with at most one trailing `*` for open-ended id families, i.e. it must match `[^*?\[\]]+\*?` in full: `trivy:CVE-*` and `trivy:GHSA-*` on `scanners/trivy.md` pass, because vulnerability ids cannot be enumerated; `trivy:*`, `trivy:**`, `checkov:?*`, and `x:*-*` fail. The tool part must be non-empty.
   - A bare `<tool>:*` is therefore forbidden (it would map every finding from a tool and defeat the grounding rule).
   - **Enforced at parse time:** `load_bundle` raises `BundleError` naming the file when `tags` or `rule_ids` is not a YAML list, a `rule_ids` entry violates the format above, or a concept declaring `rule_ids` has other than exactly one control tag. The bundle conformance test repeats these checks as a second layer.

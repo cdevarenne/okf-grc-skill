@@ -71,6 +71,13 @@ def test_log_dates_are_iso() -> None:
             assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", heading), f"{log}: {heading}"
 
 
+def test_every_rule_id_tool_has_a_matching_scanner_concept() -> None:
+    """A Scanner concept's file stem is the tool name used in rule_ids (scanners/trivy.md <-> trivy:)."""
+    scanner_codes = {c.code for c in BUNDLE.of_type("Scanner")}
+    tools = {entry.partition(":")[0] for c in BUNDLE.concepts.values() for entry in c.rule_ids}
+    assert tools <= scanner_codes
+
+
 def test_links_are_relative() -> None:
     """The pinned OKF visualizer ignores bundle-absolute links, so the bundle uses relative ones."""
     for concept in BUNDLE.concepts.values():

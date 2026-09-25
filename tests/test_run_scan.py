@@ -64,6 +64,23 @@ def test_checkov_accepts_single_framework_object() -> None:
     assert len(normalize_checkov(single, "app")) == 1
 
 
+def test_checkov_missing_severity_key_normalizes_to_unknown() -> None:
+    report = {
+        "results": {
+            "failed_checks": [
+                {
+                    "check_id": "CKV_GCP_28",
+                    "check_name": "Ensure bucket is not public",
+                    "file_path": "/infra/main.tf",
+                    "resource": "google_storage_bucket_iam_member.public_read",
+                }
+            ]
+        }
+    }
+    (finding,) = normalize_checkov(report, "app")
+    assert finding["severity"] == "unknown"
+
+
 def test_conftest_uses_namespace_as_rule_id_and_skips_successes() -> None:
     assert _keys(normalize_conftest(_load("conftest.json"), "app")) == [
         ("conftest", "deny_latest_tag", "high", "app/k8s/deployment.yaml")
@@ -91,6 +108,15 @@ def test_run_tool_rejects_crash(tmp_path: Path) -> None:
     argv = [sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(2)"]
     with pytest.raises(ScanError, match="exit 2: boom"):
         run_tool("fake", argv, tmp_path)
+
+
+def test_run_tool_decodes_utf8_regardless_of_locale(tmp_path: Path) -> None:
+    argv = [
+        sys.executable,
+        "-c",
+        "import json, sys; sys.stdout.buffer.write(json.dumps(['é']).encode('utf-8'))",
+    ]
+    assert run_tool("fake", argv, tmp_path) == ["é"]
 
 
 def test_checkov_summary_without_results_yields_no_findings() -> None:

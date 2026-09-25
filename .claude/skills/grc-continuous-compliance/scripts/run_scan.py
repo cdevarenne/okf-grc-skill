@@ -67,7 +67,7 @@ def normalize_checkov(doc: dict[str, Any] | list[dict[str, Any]], target_dir: st
         _finding(
             "checkov",
             c["check_id"],
-            c["severity"] or "unknown",
+            c.get("severity") or "unknown",
             f"{target_dir}/{c['file_path'].lstrip('/')}",
             f"{c['check_name']} ({c['resource']})",
         )
@@ -100,7 +100,7 @@ def run_tool(tool: str, argv: list[str], cwd: Path) -> Any:
     """Run a scanner and parse its JSON stdout. Exit 0/1 means clean/issues found; anything else fails."""
     if shutil.which(argv[0]) is None:
         raise ScanError(f"{tool}: '{argv[0]}' not found on PATH; run `make bootstrap`")
-    proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, check=False)
+    proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8", check=False)
     if proc.returncode not in (0, 1):
         raise ScanError(f"{tool}: exit {proc.returncode}: {proc.stderr.strip()[-500:]}")
     try:

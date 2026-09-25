@@ -48,6 +48,8 @@ has not yet claimed for any control.
   scanning.
 - **Sized for the sample app.** Scanner JSON is read in memory, and the
   scanner set is fixed in `run_scan.py`.
+- **Fixed scan layout.** Conftest reads `k8s/**/*.{yaml,yml}` and
+  `infra/**/*.tf` under the target; manifests or Terraform elsewhere are not policy-checked.
 
 ## Pins
 
