@@ -15,11 +15,13 @@ auditor-facing report.
 ```
 make bootstrap         # uv sync + install pinned scanners into .tools/
 make scan              # out/findings.json, out/mapping.json, out/oscal/*.json, out/report.md
-make render             # out/knowledge-viz.html — the OKF graph
-make test              # unit tests + Rego tests
+make render            # out/knowledge-viz.html — the OKF graph
+make test              # unit + Rego + Semgrep rule tests
 make test-integration  # full scan; asserts every seeded issue lands where expected
 make clean             # remove out/
 ```
+
+Supported platforms: macOS arm64 and Linux x86_64 (the pinned scanner binaries).
 
 ## How grounding works
 

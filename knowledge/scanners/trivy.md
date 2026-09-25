@@ -1,7 +1,7 @@
 ---
 type: Scanner
 title: Trivy
-description: Dependency and image CVEs, and configuration checks.
+description: Dependency CVEs (trivy fs) and configuration checks (trivy config).
 resource: https://github.com/aquasecurity/trivy
 tags: [sca, container, iac, cc7.1]
 rule_ids:
@@ -14,7 +14,8 @@ generated:
 # Covers
 
 Known vulnerabilities in dependencies (`trivy fs`) and misconfigurations in the
-Dockerfile, Kubernetes manifests, and Terraform (`trivy config`).
+Dockerfile, Kubernetes manifests, and Terraform (`trivy config`). Built
+container images are not scanned (`trivy image` does not run in v1).
 
 # Evidences
 

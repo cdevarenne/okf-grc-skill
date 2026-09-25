@@ -31,3 +31,12 @@ def test_token_is_read_only() -> None:
 def test_runs_bootstrap_then_tests() -> None:
     steps = [s["run"] for s in _workflow()["jobs"]["test"]["steps"] if "run" in s]
     assert steps == ["make bootstrap", "make test"]
+
+
+def test_checkout_does_not_persist_credentials() -> None:
+    (checkout,) = [s for s in _workflow()["jobs"]["test"]["steps"] if "actions/checkout" in s.get("uses", "")]
+    assert checkout["with"]["persist-credentials"] is False
+
+
+def test_job_has_a_timeout() -> None:
+    assert _workflow()["jobs"]["test"]["timeout-minutes"] == 30

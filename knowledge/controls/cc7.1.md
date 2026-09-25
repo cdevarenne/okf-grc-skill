@@ -19,7 +19,8 @@ they can be exploited: source, third-party dependencies, and container images.
 
 # Evidenced by
 
-- [Trivy](../scanners/trivy.md) — dependency and image CVEs
+- [Trivy](../scanners/trivy.md) — dependency CVEs from `trivy fs`. Built
+  container images are not scanned in v1, so image CVEs are not evidenced.
 
 # Applies to
 

@@ -1,7 +1,7 @@
 # okf-grc-skill v1 — Design Spec
 
 - **Date:** 2026-09-25
-- **Status:** approved design, pending written-spec review
+- **Status:** approved; implemented (Tasks 1–5, 7–14), human review (Task 6) pending
 - **Scope:** Phases 0–6 (§9). A Postgres/pgvector projection of the bundle (a queryable compliance data layer) is out of scope and gets its own spec → plan cycle after Phase 6 is verified.
 
 ---
